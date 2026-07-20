@@ -4,8 +4,8 @@ import { mockTestCases } from '@/mock/testCases'
 import { mockModules, mockSubmodules } from '@/mock/moduleManagement'
 import { mockDefectTypes, mockSeverities } from '@/mock/configuration'
 import { fail, mockDelay, ok, paginate } from './apiClient'
+import { allocateProjectSequence } from './projectSequenceService'
 
-let nextSequence = mockTestCases.length + 1
 const tidy = (value: string) => value.trim().replace(/\s+/g, ' ')
 
 function hydrate(projectId: string, payload: TestCasePayload, current?: TestCaseRecord): ApiResponse<TestCaseRecord> {
@@ -23,8 +23,8 @@ function hydrate(projectId: string, payload: TestCasePayload, current?: TestCase
   if (!steps) return fail('Steps are required.')
   const now = new Date().toISOString()
   return ok({
-    id: current?.id ?? `test-case-${nextSequence}`,
-    testCaseNo: current?.testCaseNo ?? `TC${String(nextSequence++).padStart(5, '0')}`,
+    id: current?.id ?? `test-case-${crypto.randomUUID()}`,
+    testCaseNo: current?.testCaseNo ?? allocateProjectSequence(projectId, 'TESTCASE', mockTestCases.filter((item) => item.projectId === projectId).map((item) => item.testCaseNo)),
     projectId,
     moduleId: module.id,
     moduleName: module.name,
@@ -65,7 +65,7 @@ export const testCaseService = {
     const response = hydrate(projectId, payload)
     if (!response.success) return response
     mockTestCases.unshift(response.data)
-    return ok(response.data, `${response.data.testCaseNo} created successfully.`)
+    return ok(response.data, `Test Case ${response.data.testCaseNo} created successfully.`)
   },
   async updateTestCase(projectId: string, id: string, payload: TestCasePayload): Promise<ApiResponse<TestCaseRecord>> {
     await mockDelay()

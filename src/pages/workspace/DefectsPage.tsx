@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { BarChart3, ChevronDown, ChevronUp, Download, Edit3, Eye, FileDown, FileUp, History, Plus, RefreshCcw, RotateCcw, Trash2, UserRoundCog } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/common/Badge'
@@ -30,11 +31,13 @@ import { formatDate } from '@/utils/format'
 import { projectAllocationService } from '@/services/projectAllocationService'
 import { SeverityBreakdownPanel } from '@/components/dashboard/level2/SeverityBreakdownPanel'
 import { cn } from '@/utils/cn'
+import { MODULE_REFERENCE_DATA_CHANGED } from '@/utils/referenceDataEvents'
 
 const emptyForm: DefectPayload = { moduleId:'',submoduleId:'',defectTypeId:'',severityId:'',priorityId:'',releaseId:'',description:'',recreationSteps:'',attachmentName:'',assignedToId:'',testCaseRequired:false }
 
 export const DefectsPage: React.FC = () => {
   const { projectId, isProjectRoute } = useProjectScope(); const { hasPrivilege, user } = useAuth(); const toast = useToast(); const confirm = useConfirm()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [modules,setModules]=useState<ModuleRecord[]>([]); const [submodules,setSubmodules]=useState<SubmoduleRecord[]>([]); const [types,setTypes]=useState<DefectTypeConfig[]>([]); const [severities,setSeverities]=useState<SeverityConfig[]>([]); const [priorities,setPriorities]=useState<PriorityConfig[]>([]); const [statuses,setStatuses]=useState<StatusTypeRecord[]>([]); const [releases,setReleases]=useState<ReleaseRecord[]>([])
   const [page,setPage]=useState<Page<DefectRecord>|null>(null); const [loading,setLoading]=useState(false); const [error,setError]=useState<string|null>(null); const [pageNumber,setPageNumber]=useState(0); const [pageSize,setPageSize]=useState(10)
   const [isBreakdownOpen,setIsBreakdownOpen]=useState(false)
@@ -47,7 +50,8 @@ export const DefectsPage: React.FC = () => {
   const projectSubmodules=useMemo(()=>submodules.filter(s=>!filters.moduleId||s.moduleId===filters.moduleId),[submodules,filters.moduleId]); const formSubmodules=useMemo(()=>submodules.filter(s=>s.moduleId===form.moduleId),[submodules,form.moduleId])
   const priorityMap=useMemo(()=>new Map(priorities.map(p=>[p.id,p])),[priorities]); const severityMap=useMemo(()=>new Map(severities.map(s=>[s.id,s])),[severities]); const statusMap=useMemo(()=>new Map(statuses.map(s=>[s.code,s])),[statuses])
 
-  useEffect(()=>{ if(!projectId)return; (async()=>{ const [m,t,se,p,st,r]=await Promise.all([moduleManagementService.getModules(projectId),defectService.getDefectTypes({pageNumber:0,pageSize:100}),defectService.getSeverities({pageNumber:0,pageSize:100}),defectService.getPriorities({pageNumber:0,pageSize:100}),statusTypeService.getStatusTypes({pageNumber:0,pageSize:100}),releaseService.getReleases({pageNumber:0,pageSize:100,filters:{projectId}})]); if(m.success){setModules(m.data); const subResults=await Promise.all(m.data.map(x=>moduleManagementService.getSubmodules(projectId,x.id))); setSubmodules(subResults.flatMap(x=>x.success?x.data:[]))} if(t.success)setTypes(t.data.content);if(se.success)setSeverities(se.data.content);if(p.success)setPriorities(p.data.content);if(st.success)setStatuses(st.data.content);if(r.success)setReleases(r.data.content) })() },[projectId])
+  const loadReferenceData=useCallback(async()=>{ if(!projectId)return; const [m,t,se,p,st,r]=await Promise.all([moduleManagementService.getModules(projectId),defectService.getDefectTypes({pageNumber:0,pageSize:100}),defectService.getSeverities({pageNumber:0,pageSize:100}),defectService.getPriorities({pageNumber:0,pageSize:100}),statusTypeService.getStatusTypes({pageNumber:0,pageSize:100}),releaseService.getReleases({pageNumber:0,pageSize:100,filters:{projectId}})]); if(m.success){setModules(m.data); const subResults=await Promise.all(m.data.map(x=>moduleManagementService.getSubmodules(projectId,x.id))); setSubmodules(subResults.flatMap(x=>x.success?x.data:[]))} if(t.success)setTypes(t.data.content);if(se.success)setSeverities(se.data.content);if(p.success)setPriorities(p.data.content);if(st.success)setStatuses(st.data.content);if(r.success)setReleases(r.data.content) },[projectId])
+  useEffect(()=>{void loadReferenceData()},[loadReferenceData])
   useEffect(()=>{ if(!projectId||!filters.submoduleId){setDevelopers([]);return} defectService.getSubmoduleDevelopers(projectId,filters.submoduleId).then(r=>r.success&&setDevelopers(r.data)) },[projectId,filters.submoduleId])
   useEffect(()=>{ if(!projectId||!form.submoduleId){return} defectService.getSubmoduleDevelopers(projectId,form.submoduleId).then(r=>r.success&&setDevelopers(r.data)) },[projectId,form.submoduleId])
 
@@ -55,6 +59,8 @@ export const DefectsPage: React.FC = () => {
   useEffect(()=>{ setPageNumber(0) },[filters])
   const clearFilters=()=>{setFilters({moduleId:'',submoduleId:'',defectTypeId:'',severityId:'',priorityId:'',statusCode:'',assignedToId:'',enteredByName:'',releaseId:'',search:''});setPageNumber(0)}
   const openCreate=()=>{setEditing(null);setForm(emptyForm);setFormErrors({});setDevelopers([]);setFormOpen(true)}
+  useEffect(()=>{if(!projectId||searchParams.get('create')!=='defect')return;openCreate();const next=new URLSearchParams(searchParams);next.delete('create');setSearchParams(next,{replace:true})},[projectId,searchParams,setSearchParams])
+  useEffect(()=>{const refresh=()=>{void loadReferenceData()};window.addEventListener(MODULE_REFERENCE_DATA_CHANGED,refresh);return()=>window.removeEventListener(MODULE_REFERENCE_DATA_CHANGED,refresh)},[loadReferenceData])
   const openEdit=async(d:DefectRecord)=>{setEditing(d);setForm({moduleId:d.moduleId,submoduleId:d.submoduleId,defectTypeId:d.defectTypeId,severityId:d.severityId,priorityId:d.priorityId,releaseId:d.releaseId,description:d.description,recreationSteps:d.recreationSteps,attachmentName:d.attachmentName??'',assignedToId:d.assignedToId,testCaseRequired:d.testCaseRequired});const r=await defectService.getSubmoduleDevelopers(d.projectId,d.submoduleId);if(r.success)setDevelopers(r.data);setFormOpen(true)}
   const validate=()=>{const e:Record<string,string>={};[['moduleId','Module'],['submoduleId','Submodule'],['defectTypeId','Defect Type'],['severityId','Severity'],['priorityId','Priority'],['releaseId','Found in Release'],['description','Brief Description'],['recreationSteps','Recreation Steps'],['assignedToId','Assigned To']].forEach(([k,l])=>{if(!String(form[k as keyof DefectPayload]??'').trim())e[k]=`${l} is required.`});setFormErrors(e);return !Object.keys(e).length}
   const changed=useMemo(()=>!editing||JSON.stringify(form)!==JSON.stringify({moduleId:editing.moduleId,submoduleId:editing.submoduleId,defectTypeId:editing.defectTypeId,severityId:editing.severityId,priorityId:editing.priorityId,releaseId:editing.releaseId,description:editing.description,recreationSteps:editing.recreationSteps,attachmentName:editing.attachmentName??'',assignedToId:editing.assignedToId,testCaseRequired:editing.testCaseRequired}),[editing,form])

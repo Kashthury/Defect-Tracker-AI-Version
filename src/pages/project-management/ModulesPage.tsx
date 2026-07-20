@@ -14,6 +14,7 @@ import { useProjectScope } from '@/hooks/useProjectScope'
 import { moduleManagementService } from '@/services/moduleManagementService'
 import { AssignedProjectMember, ModuleRecord, SubmoduleRecord } from '@/types/moduleManagement'
 import { useToast } from '@/context/ToastContext'
+import { notifyModuleReferenceDataChanged } from '@/utils/referenceDataEvents'
 
 interface FormState { name: string; description: string }
 const emptyForm: FormState = { name: '', description: '' }
@@ -110,12 +111,12 @@ export const ModulesPage: React.FC = () => {
       : modal === 'sub-create' ? await moduleManagementService.createSubmodule(projectId, selectedModuleId, form)
       : await moduleManagementService.updateSubmodule(selectedSubmoduleId, form)
     if (!result.success) { setError(result.message); return }
-    toast.success(result.message); setModal(null); await loadModules()
+    toast.success(result.message); setModal(null); notifyModuleReferenceDataChanged(); await loadModules()
     if (selectedModuleId) { const subs = await moduleManagementService.getSubmodules(projectId, selectedModuleId); setSubmodules(subs.data) }
   }
 
-  const deleteModule = async (item: ModuleRecord) => { const r = await moduleManagementService.deleteModule(item.id); r.success ? toast.success(r.message) : toast.error(r.message); if (r.success) loadModules() }
-  const deleteSubmodule = async (item: SubmoduleRecord) => { const r = await moduleManagementService.deleteSubmodule(item.id); r.success ? toast.success(r.message) : toast.error(r.message); if (r.success && projectId) { const subs = await moduleManagementService.getSubmodules(projectId, selectedModuleId); setSubmodules(subs.data); loadModules() } }
+  const deleteModule = async (item: ModuleRecord) => { const r = await moduleManagementService.deleteModule(item.id); r.success ? toast.success(r.message) : toast.error(r.message); if (r.success) { notifyModuleReferenceDataChanged(); loadModules() } }
+  const deleteSubmodule = async (item: SubmoduleRecord) => { const r = await moduleManagementService.deleteSubmodule(item.id); r.success ? toast.success(r.message) : toast.error(r.message); if (r.success && projectId) { notifyModuleReferenceDataChanged(); const subs = await moduleManagementService.getSubmodules(projectId, selectedModuleId); setSubmodules(subs.data); loadModules() } }
   const saveQa = async (ids: string[]) => { if (!selectedModule) return; const r = await moduleManagementService.assignQa(selectedModule.id, ids); setModules((prev) => prev.map((m) => m.id === selectedModule.id ? r.data : m)); toast.success(r.message) }
   const saveDevelopers = async (ids: string[]) => { if (!selectedSubmodule) return; const r = await moduleManagementService.assignDevelopers(selectedSubmodule.id, ids); setSubmodules((prev) => prev.map((s) => s.id === selectedSubmodule.id ? r.data : s)); toast.success(r.message) }
 

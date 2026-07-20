@@ -9,8 +9,8 @@ import { mockTestCases } from '@/mock/testCases'
 import { mockDefectWorkflowStore } from '@/mock/defectWorkflow'
 import { fail, mockDelay, ok, paginate } from './apiClient'
 import { STATUS_TYPE_CODES, StatusTypeCode } from '@/constants/statusTypes'
+import { allocateProjectSequence } from './projectSequenceService'
 
-let nextTestCase = mockTestCases.length + 1
 const tidy = (v: string) => v.trim().replace(/\s+/g, ' ')
 
 /**
@@ -20,10 +20,11 @@ const tidy = (v: string) => v.trim().replace(/\s+/g, ' ')
  * execution FAIL flow, which creates defects directly) generate a Defect
  * Number that can never collide with one generated here.
  */
-export function allocateDefectNumber(): { id: string; defectNo: string } {
-  const maxNo = mockDefects.reduce((max, d) => Math.max(max, Number(d.defectNo.replace(/\D/g, '')) || 0), 0)
-  const next = maxNo + 1
-  return { id: `defect-${next}-${Date.now()}-${Math.round(Math.random() * 1000)}`, defectNo: `DF${String(next).padStart(5, '0')}` }
+export function allocateDefectNumber(projectId: string): { id: string; defectNo: string } {
+  return {
+    id: `defect-${crypto.randomUUID()}`,
+    defectNo: allocateProjectSequence(projectId, 'DEFECT', mockDefects.filter((item) => item.projectId === projectId).map((item) => item.defectNo)),
+  }
 }
 const reassignable = new Set<StatusTypeCode>([
   STATUS_TYPE_CODES.NEW, STATUS_TYPE_CODES.OPEN, STATUS_TYPE_CODES.IN_PROGRESS, STATUS_TYPE_CODES.REOPENED,
@@ -59,8 +60,8 @@ function hydrate(projectId: string, payload: DefectPayload, current?: DefectReco
   if (payload.testCaseRequired) {
     const existing = linkedTestCaseId ? mockTestCases.find((t) => t.id === linkedTestCaseId) : undefined
     const testCase = {
-      id: existing?.id ?? `test-case-${nextTestCase}`,
-      testCaseNo: existing?.testCaseNo ?? `TC${String(nextTestCase++).padStart(5, '0')}`,
+      id: existing?.id ?? `test-case-${crypto.randomUUID()}`,
+      testCaseNo: existing?.testCaseNo ?? allocateProjectSequence(projectId, 'TESTCASE', mockTestCases.filter((item) => item.projectId === projectId).map((item) => item.testCaseNo)),
       projectId, moduleId: module.id, moduleName: module.name, submoduleId: sub.id, submoduleName: sub.name,
       defectTypeId: type.id, defectTypeName: type.name, severityId: severity.id, severityName: severity.name, severityColor: severity.color,
       description: tidy(payload.description), steps: payload.recreationSteps.trim(), createdAt: existing?.createdAt ?? now, updatedAt: now,
@@ -69,7 +70,7 @@ function hydrate(projectId: string, payload: DefectPayload, current?: DefectReco
     if (existing) Object.assign(existing, testCase); else mockTestCases.unshift(testCase)
     linkedTestCaseId = testCase.id; linkedTestCaseNo = testCase.testCaseNo
   }
-  const defectNumber = current ? { id: current.id, defectNo: current.defectNo } : allocateDefectNumber()
+  const defectNumber = current ? { id: current.id, defectNo: current.defectNo } : allocateDefectNumber(projectId)
   return ok({
     id: defectNumber.id,
     defectNo: defectNumber.defectNo,
@@ -92,7 +93,7 @@ function history(defectId: string, action: DefectHistoryRecord['action'], change
 export const defectService = {
   async getDefects(projectId: string, request: PageRequest): Promise<ApiResponse<Page<DefectRecord>>> { await mockDelay(); return ok(paginate(mockDefects.filter((d) => d.projectId === projectId), request, ['defectNo','description','assignedToName','enteredByName','releaseName'])) },
   async getDefectById(projectId: string, id: string) { await mockDelay(); const d = mockDefects.find((x) => x.projectId === projectId && x.id === id); return d ? ok({ ...d }) : fail<DefectRecord>('Defect not found.') },
-  async createDefect(projectId: string, payload: DefectPayload, enteredBy?: { id: string; name: string }) { await mockDelay(); const r = hydrate(projectId, payload, undefined, enteredBy); if (!r.success) return r; mockDefects.unshift(r.data); history(r.data.id, 'CREATED', r.data.enteredByName, undefined, r.data.statusName); return ok(r.data, `${r.data.defectNo} created successfully.`) },
+  async createDefect(projectId: string, payload: DefectPayload, enteredBy?: { id: string; name: string }) { await mockDelay(); const r = hydrate(projectId, payload, undefined, enteredBy); if (!r.success) return r; mockDefects.unshift(r.data); history(r.data.id, 'CREATED', r.data.enteredByName, undefined, r.data.statusName); return ok(r.data, `Defect ${r.data.defectNo} created successfully.`) },
   async updateDefect(projectId: string, id: string, payload: DefectPayload, changedBy = 'Super User') { await mockDelay(); const i = mockDefects.findIndex((d) => d.projectId === projectId && d.id === id); if (i < 0) return fail<DefectRecord>('Defect not found.'); const r = hydrate(projectId, payload, mockDefects[i]); if (!r.success) return r; mockDefects[i] = r.data; history(id,'UPDATED',changedBy); return ok(r.data, `${r.data.defectNo} updated successfully.`) },
   async deleteDefect(projectId: string, id: string) { await mockDelay(); const i = mockDefects.findIndex((d) => d.projectId === projectId && d.id === id); if (i < 0) return fail<null>('Defect not found.'); if (mockDefects[i].statusCode === STATUS_TYPE_CODES.CLOSED) return fail<null>('Closed defects cannot be deleted.'); mockDefects.splice(i,1); return ok(null,'Defect deleted successfully.') },
   async updateDefectStatus(projectId: string, id: string, toStatusId: string, changedBy = 'Super User') { await mockDelay(); const d = mockDefects.find((x) => x.projectId === projectId && x.id === id); const target = mockStatusTypes.find((s) => s.id === toStatusId); const current = mockStatusTypes.find((s) => s.code === d?.statusCode); if (!d || !target || !current) return fail<DefectRecord>('Defect or status not found.'); const wf = mockDefectWorkflowStore.current; const allowed = wf?.transitions.some((t) => t.fromStatusId === current.id && t.toStatusId === target.id); if (!allowed) return fail<DefectRecord>(`Workflow does not allow ${current.name} → ${target.name}.`); const from = d.statusName; d.statusCode = target.code; d.statusName = target.name; d.updatedAt = new Date().toISOString(); history(d.id,'STATUS_CHANGED',changedBy,from,target.name); return ok({ ...d },`Status changed to ${target.name}.`) },

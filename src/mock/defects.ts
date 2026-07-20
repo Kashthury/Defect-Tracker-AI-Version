@@ -5,6 +5,7 @@ import { mockReleases } from './releases'
 import { mockEmployeeRecords } from './employees'
 
 const descriptions = ['Settlement total differs from ledger', 'Validation message is not displayed', 'Duplicate request is accepted', 'Page becomes unresponsive after save', 'Incorrect status badge is displayed']
+const projectDefectSequences = new Map<string, number>()
 export const mockDefects: DefectRecord[] = Array.from({ length: 95 }, (_, index) => {
   const module = mockModules[index % mockModules.length]
   const subs = mockSubmodules.filter((s) => s.moduleId === module.id)
@@ -17,9 +18,11 @@ export const mockDefects: DefectRecord[] = Array.from({ length: 95 }, (_, index)
   const developerId = sub.developerEmployeeIds[0] ?? 'emp-0004'
   const developer = mockEmployeeRecords.find((e) => e.id === developerId)
   const status = mockStatusTypes[index % mockStatusTypes.length]
+  const sequence = (projectDefectSequences.get(module.projectId) ?? 0) + 1
+  projectDefectSequences.set(module.projectId, sequence)
   return {
     id: `defect-${index + 1}`,
-    defectNo: `DF${String(index + 1).padStart(5, '0')}`,
+    defectNo: `DEF${String(sequence).padStart(5, '0')}`,
     projectId: module.projectId,
     moduleId: module.id,
     moduleName: module.name,

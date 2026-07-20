@@ -206,7 +206,7 @@ export const releaseTestCaseExecutionService = {
     if (!developer) return fail('Select a Developer who is assigned to this Submodule and actively allocated to the project.')
 
     // All validations passed — commit the transaction: create the Defect, link it, then flip the allocation to FAILED.
-    const { id: defectId, defectNo } = allocateDefectNumber()
+    const { id: defectId, defectNo } = allocateDefectNumber(current.projectId)
     const now = new Date().toISOString()
     const defect: DefectRecord = {
       id: defectId,

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Download, Edit3, Eye, FileDown, FileUp, Plus, RotateCcw, Search as SearchIcon, Trash2, Upload } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge, Button, Card, Dropdown, Input, Modal, Pagination, Table, TableColumn } from '@/components/common'
@@ -18,6 +19,7 @@ import { ModuleRecord, SubmoduleRecord } from '@/types/moduleManagement'
 import { DefectTypeConfig, SeverityConfig } from '@/types/defect'
 import { TestCaseImportValidation, TestCasePayload, TestCaseRecord } from '@/types/testCase'
 import { formatDate } from '@/utils/format'
+import { MODULE_REFERENCE_DATA_CHANGED } from '@/utils/referenceDataEvents'
 
 const EMPTY_FORM: TestCasePayload = { moduleId: '', submoduleId: '', defectTypeId: '', severityId: '', description: '', steps: '' }
 
@@ -43,6 +45,7 @@ export const TestCasesPage: React.FC<TestCasesPageProps> = ({
   showCreateAction = true,
 }) => {
   const { projectId, isProjectRoute } = useProjectScope()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { hasPrivilege } = useAuth()
   const toast = useToast()
   const confirm = useConfirm()
@@ -115,6 +118,7 @@ export const TestCasesPage: React.FC<TestCasesPageProps> = ({
 
   useEffect(() => {
     setModuleId(''); setSubmoduleId(''); setSeverityId(''); setDefectTypeId(''); setSearch(''); setPageNumber(0)
+    setEditing(null); setForm(EMPTY_FORM); setFormErrors({}); setFormOpen(false)
     void loadReferenceData()
   }, [projectId, loadReferenceData])
 
@@ -130,8 +134,50 @@ export const TestCasesPage: React.FC<TestCasesPageProps> = ({
   }
 
   const openCreate = () => {
-    setEditing(null); setForm(EMPTY_FORM); setFormErrors({}); setFormOpen(true)
+    const selectedModuleId = modules.some((item) => item.id === moduleId) ? moduleId : ''
+    const selectedSubmoduleId = submodules.some((item) => item.projectId === projectId && item.moduleId === selectedModuleId && item.id === submoduleId) ? submoduleId : ''
+    setEditing(null)
+    setForm({ ...EMPTY_FORM, moduleId: selectedModuleId, submoduleId: selectedSubmoduleId })
+    setFormErrors({})
+    setFormOpen(true)
   }
+
+  const updateCreateModule = (selectedModuleId: string) => {
+    setForm((previous) => ({ ...previous, moduleId: selectedModuleId, submoduleId: '' }))
+    setModuleId((current) => current === selectedModuleId ? current : selectedModuleId)
+    setSubmoduleId((current) => current === '' ? current : '')
+    setPageNumber(0)
+    setFormErrors((previous) => ({ ...previous, moduleId: '', submoduleId: '' }))
+  }
+
+  const updateCreateSubmodule = (selectedSubmoduleId: string) => {
+    const validSubmoduleId = submodules.some((item) => item.projectId === projectId && item.moduleId === form.moduleId && item.id === selectedSubmoduleId) ? selectedSubmoduleId : ''
+    setForm((previous) => previous.submoduleId === validSubmoduleId ? previous : { ...previous, submoduleId: validSubmoduleId })
+    setSubmoduleId((current) => current === validSubmoduleId ? current : validSubmoduleId)
+    setPageNumber(0)
+    setFormErrors((previous) => ({ ...previous, submoduleId: '' }))
+  }
+
+  useEffect(() => {
+    if (!formOpen || editing) return
+    const validModuleId = modules.some((item) => item.id === moduleId) ? moduleId : ''
+    const validSubmoduleId = submodules.some((item) => item.projectId === projectId && item.moduleId === validModuleId && item.id === submoduleId) ? submoduleId : ''
+    setForm((previous) => previous.moduleId === validModuleId && previous.submoduleId === validSubmoduleId
+      ? previous
+      : { ...previous, moduleId: validModuleId, submoduleId: validSubmoduleId })
+  }, [editing, formOpen, moduleId, modules, projectId, submoduleId, submodules])
+  useEffect(() => {
+    if (!projectId || searchParams.get('create') !== 'testcase') return
+    openCreate()
+    const next = new URLSearchParams(searchParams); next.delete('create')
+    setSearchParams(next, { replace: true })
+  }, [projectId, searchParams, setSearchParams])
+
+  useEffect(() => {
+    const refresh = () => { void loadReferenceData() }
+    window.addEventListener(MODULE_REFERENCE_DATA_CHANGED, refresh)
+    return () => window.removeEventListener(MODULE_REFERENCE_DATA_CHANGED, refresh)
+  }, [loadReferenceData])
   const openEdit = (item: TestCaseRecord) => {
     setEditing(item)
     setForm({ moduleId: item.moduleId, submoduleId: item.submoduleId, defectTypeId: item.defectTypeId, severityId: item.severityId, description: item.description, steps: item.steps })
@@ -139,8 +185,10 @@ export const TestCasesPage: React.FC<TestCasesPageProps> = ({
   }
   const validate = () => {
     const errors: Record<string, string> = {}
-    if (!form.moduleId) errors.moduleId = 'Module is required.'
-    if (!form.submoduleId) errors.submoduleId = 'Submodule is required.'
+    const validModule = modules.some((item) => item.id === form.moduleId)
+    const validSubmodule = submodules.some((item) => item.projectId === projectId && item.moduleId === form.moduleId && item.id === form.submoduleId)
+    if (!validModule) errors.moduleId = 'Select a valid Module for the selected Project.'
+    if (!validSubmodule) errors.submoduleId = 'Select a valid Submodule for the selected Module.'
     if (!form.defectTypeId) errors.defectTypeId = 'Defect Type is required.'
     if (!form.severityId) errors.severityId = 'Severity is required.'
     if (!form.description.trim()) errors.description = 'Description is required.'
@@ -259,8 +307,8 @@ export const TestCasesPage: React.FC<TestCasesPageProps> = ({
 
     <Modal isOpen={formOpen} onClose={() => setFormOpen(false)} title={editing ? `Edit ${editing.testCaseNo}` : 'Create Test Case'} description="Test Case Number is generated automatically." size="lg" footer={<><Button variant="ghost" onClick={() => setFormOpen(false)}>Cancel</Button><Button onClick={() => void save()} isLoading={saving} disabled={Boolean(editing) && !changed}>{editing ? 'Update' : 'Create'}</Button></>}>
       <div className="grid gap-4 md:grid-cols-2">
-        <Dropdown label="Module" required value={form.moduleId} error={formErrors.moduleId} options={modules.map((item) => ({ value: item.id, label: item.name }))} onChange={(event) => { setForm({ ...form, moduleId: event.target.value, submoduleId: '' }); setFormErrors({ ...formErrors, moduleId: '', submoduleId: '' }) }} />
-        <Dropdown label="Submodule" required disabled={!form.moduleId} value={form.submoduleId} error={formErrors.submoduleId} options={selectedModuleSubmodules.map((item) => ({ value: item.id, label: item.name }))} onChange={(event) => { setForm({ ...form, submoduleId: event.target.value }); setFormErrors({ ...formErrors, submoduleId: '' }) }} />
+        <Dropdown label="Module" required value={form.moduleId} error={formErrors.moduleId} options={modules.map((item) => ({ value: item.id, label: item.name }))} onChange={(event) => editing ? (setForm({ ...form, moduleId: event.target.value, submoduleId: '' }), setFormErrors({ ...formErrors, moduleId: '', submoduleId: '' })) : updateCreateModule(event.target.value)} />
+        <Dropdown label="Submodule" required disabled={!form.moduleId} value={form.submoduleId} error={formErrors.submoduleId} options={selectedModuleSubmodules.map((item) => ({ value: item.id, label: item.name }))} onChange={(event) => editing ? (setForm({ ...form, submoduleId: event.target.value }), setFormErrors({ ...formErrors, submoduleId: '' })) : updateCreateSubmodule(event.target.value)} />
         <Dropdown label="Defect Type" required value={form.defectTypeId} error={formErrors.defectTypeId} options={defectTypes.map((item) => ({ value: item.id, label: item.name }))} onChange={(event) => { setForm({ ...form, defectTypeId: event.target.value }); setFormErrors({ ...formErrors, defectTypeId: '' }) }} />
         <Dropdown label="Severity" required value={form.severityId} error={formErrors.severityId} options={severities.map((item) => ({ value: item.id, label: item.name }))} onChange={(event) => { setForm({ ...form, severityId: event.target.value }); setFormErrors({ ...formErrors, severityId: '' }) }} />
         <div className="md:col-span-2"><label className="mb-1.5 block text-sm font-medium text-ink-700">Description<span className="ml-0.5 text-signal-critical">*</span></label><textarea value={form.description} onChange={(event) => { setForm({ ...form, description: event.target.value }); setFormErrors({ ...formErrors, description: '' }) }} rows={3} className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400/40 ${formErrors.description ? 'border-signal-critical' : 'border-ink-200'}`} />{formErrors.description && <p className="mt-1 text-xs text-signal-critical">{formErrors.description}</p>}</div>

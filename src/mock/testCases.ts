@@ -13,13 +13,16 @@ const descriptions = [
   'Verify invalid input is rejected',
 ]
 
+const projectTestCaseSequences = new Map<string, number>()
+
 export const mockTestCases: TestCaseRecord[] = Array.from({ length: 240 }, (_, index) => {
   const module = mockModules[index % mockModules.length]
   const submodules = mockSubmodules.filter((item) => item.moduleId === module.id)
   const submodule = submodules[index % Math.max(1, submodules.length)] ?? mockSubmodules[0]
   const defectType = mockDefectTypes[index % mockDefectTypes.length]
   const severity = mockSeverities[index % mockSeverities.length]
-  const sequence = index + 1
+  const sequence = (projectTestCaseSequences.get(module.projectId) ?? 0) + 1
+  projectTestCaseSequences.set(module.projectId, sequence)
   return {
     id: `test-case-${sequence}`,
     testCaseNo: `TC${String(sequence).padStart(5, '0')}`,
