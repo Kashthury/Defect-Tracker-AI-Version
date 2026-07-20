@@ -1,0 +1,105 @@
+import { Privilege } from '@/types/auth'
+import { PRIV } from '@/constants/privileges'
+
+const def = (code: string, module: string, action: string, description: string): Privilege => ({
+  id: `priv-${code.toLowerCase()}`,
+  code,
+  module,
+  action,
+  description,
+})
+
+/**
+ * Full privilege catalogue. This is the single source of truth for every
+ * grantable permission in the system; roles reference these by id.
+ */
+export const mockPrivileges: Privilege[] = [
+  def(PRIV.DASHBOARD_VIEW, 'Dashboard', 'View', 'View the dashboard landing page'),
+
+  def(PRIV.MY_PROJECTS_VIEW, 'Workspace', 'View', 'View projects assigned to the current user'),
+  def(PRIV.RELEASE_VIEW, 'Workspace', 'View', 'View release schedules'),
+  def(PRIV.RELEASE_CREATE, 'Workspace', 'Create', 'Create project releases'),
+  def(PRIV.RELEASE_UPDATE, 'Workspace', 'Update', 'Update release information'),
+  def(PRIV.RELEASE_DELETE, 'Workspace', 'Delete', 'Delete eligible releases'),
+  def(PRIV.RELEASE_STATUS_CHANGE, 'Workspace', 'Manage', 'Change release status'),
+  def(PRIV.TESTCASE_VIEW, 'Workspace', 'View', 'View test cases'),
+  def(PRIV.TESTCASE_CREATE, 'Workspace', 'Create', 'Create project test cases'),
+  def(PRIV.TESTCASE_UPDATE, 'Workspace', 'Update', 'Update project test cases'),
+  def(PRIV.TESTCASE_DELETE, 'Workspace', 'Delete', 'Delete unused project test cases'),
+  def(PRIV.TESTCASE_EXPORT, 'Workspace', 'Export', 'Export project test cases and templates'),
+  def(PRIV.TESTCASE_IMPORT, 'Workspace', 'Import', 'Import test cases into the selected project'),
+  def(PRIV.TESTCASE_EXECUTION_VIEW, 'Workspace', 'View', 'View own release test case execution allocations'),
+  def(PRIV.TESTCASE_EXECUTION_VIEW_ALL, 'Workspace', 'View', 'View all release test case execution allocations for a project'),
+  def(PRIV.TESTCASE_EXECUTE, 'Workspace', 'Update', 'Execute release test case allocations (Pass/Fail)'),
+  def(PRIV.TESTCASE_FAIL_CREATE_DEFECT, 'Workspace', 'Create', 'Create a defect while failing a release test case allocation'),
+  def(PRIV.DEFECT_VIEW, 'Workspace', 'View', 'View defects'),
+  def(PRIV.DEFECT_CREATE, 'Workspace', 'Create', 'Log new defects'),
+  def(PRIV.DEFECT_UPDATE, 'Workspace', 'Update', 'Update defect status and fields'),
+  def(PRIV.REPORTS_VIEW, 'Workspace', 'View', 'View analytics and reports'),
+
+  def(PRIV.PROJECT_VIEW, 'Project Management', 'View', 'View all projects'),
+  def(PRIV.PROJECT_MANAGE, 'Project Management', 'Manage', 'Create, edit and archive projects'),
+  def(PRIV.PROJECT_CREATE, 'Project Management', 'Create', 'Create projects and initial manager allocations'),
+  def(PRIV.PROJECT_UPDATE, 'Project Management', 'Update', 'Update projects and Project Manager allocations'),
+  def(PRIV.PROJECT_DELETE, 'Project Management', 'Delete', 'Delete projects without dependent records'),
+  def(PRIV.PROJECT_STATUS_CHANGE, 'Project Management', 'Manage', 'Activate or deactivate projects'),
+  def(PRIV.PROJECT_ALLOCATION_VIEW, 'Project Management', 'View', 'View project allocations and history'),
+  def(PRIV.PROJECT_ALLOCATION_UPDATE, 'Project Management', 'Update', 'Create and update project allocations'),
+  def(PRIV.MODULE_VIEW, 'Project Management', 'View', 'View project modules'),
+  def(PRIV.ALLOCATION_VIEW, 'Project Management', 'View', 'View resource allocation history'),
+
+  def(PRIV.EMPLOYEE_VIEW, 'User Management', 'View', 'View employee directory'),
+  def(PRIV.EMPLOYEE_MANAGE, 'User Management', 'Manage', 'Create and edit employee records'),
+  def(PRIV.EMPLOYEE_CREATE, 'User Management', 'Create', 'Create new employee records'),
+  def(PRIV.EMPLOYEE_UPDATE, 'User Management', 'Update', 'Update existing employee records'),
+  def(PRIV.EMPLOYEE_DELETE, 'User Management', 'Delete', 'Delete employee records'),
+  def(PRIV.EMPLOYEE_STATUS_CHANGE, 'User Management', 'Manage', 'Change employee active/inactive status'),
+  def(PRIV.ROLE_VIEW, 'Configuration', 'View', 'View roles'),
+  def(PRIV.ROLE_CREATE, 'Configuration', 'Create', 'Create roles'),
+  def(PRIV.ROLE_UPDATE, 'Configuration', 'Update', 'Update roles'),
+  def(PRIV.ROLE_DELETE, 'Configuration', 'Delete', 'Delete roles'),
+  def(PRIV.ROLE_STATUS_CHANGE, 'Configuration', 'Manage', 'Change role active/inactive status'),
+  def(PRIV.ROLE_MANAGE, 'Configuration', 'Manage', 'Legacy role management access'),
+  def(PRIV.PRIVILEGE_VIEW, 'User Management', 'View', 'View the privilege catalogue'),
+  def(PRIV.PRIVILEGE_ASSIGN, 'Configuration', 'Manage', 'Assign privileges to roles'),
+  def(PRIV.USER_PERMISSION_MANAGE, 'Configuration', 'Manage', 'Manage per-user permission overrides'),
+  def(PRIV.DESIGNATION_VIEW, 'Configuration', 'View', 'View designations'),
+  def(PRIV.DESIGNATION_CREATE, 'Configuration', 'Create', 'Create designations'),
+  def(PRIV.DESIGNATION_UPDATE, 'Configuration', 'Update', 'Update designations'),
+  def(PRIV.DESIGNATION_DELETE, 'Configuration', 'Delete', 'Delete designations'),
+
+  def(PRIV.DEFECT_TYPE_CONFIG, 'Configuration', 'Manage', 'Configure defect types'),
+  def(PRIV.DEFECT_TYPE_VIEW, 'Configuration', 'View', 'View defect types'),
+  def(PRIV.DEFECT_TYPE_CREATE, 'Configuration', 'Create', 'Create defect types'),
+  def(PRIV.DEFECT_TYPE_UPDATE, 'Configuration', 'Update', 'Update defect types'),
+  def(PRIV.DEFECT_TYPE_DELETE, 'Configuration', 'Delete', 'Delete defect types'),
+  def(PRIV.RELEASE_TYPE_CONFIG, 'Configuration', 'Manage', 'Configure release types'),
+  def(PRIV.RELEASE_TYPE_VIEW, 'Configuration', 'View', 'View release types'),
+  def(PRIV.RELEASE_TYPE_CREATE, 'Configuration', 'Create', 'Create release types'),
+  def(PRIV.RELEASE_TYPE_UPDATE, 'Configuration', 'Update', 'Update release types'),
+  def(PRIV.RELEASE_TYPE_DELETE, 'Configuration', 'Delete', 'Delete release types'),
+  def(PRIV.SEVERITY_CONFIG, 'Configuration', 'Manage', 'Configure severity levels'),
+  def(PRIV.SEVERITY_VIEW, 'Configuration', 'View', 'View severities'),
+  def(PRIV.SEVERITY_CREATE, 'Configuration', 'Create', 'Create severities'),
+  def(PRIV.SEVERITY_UPDATE, 'Configuration', 'Update', 'Update severities'),
+  def(PRIV.SEVERITY_DELETE, 'Configuration', 'Delete', 'Delete severities'),
+  def(PRIV.PRIORITY_CONFIG, 'Configuration', 'Manage', 'Configure priority levels'),
+  def(PRIV.PRIORITY_VIEW, 'Configuration', 'View', 'View priorities'),
+  def(PRIV.PRIORITY_CREATE, 'Configuration', 'Create', 'Create priorities'),
+  def(PRIV.PRIORITY_UPDATE, 'Configuration', 'Update', 'Update priorities'),
+  def(PRIV.PRIORITY_DELETE, 'Configuration', 'Delete', 'Delete priorities'),
+  def(PRIV.STATUS_TYPE_CONFIG, 'Configuration', 'Manage', 'Configure status types'),
+  def(PRIV.STATUS_TYPE_VIEW, 'Configuration', 'View', 'View status types'),
+  def(PRIV.STATUS_TYPE_CREATE, 'Configuration', 'Create', 'Create controlled status types'),
+  def(PRIV.STATUS_TYPE_UPDATE, 'Configuration', 'Update', 'Update status type names and colors'),
+  def(PRIV.STATUS_TYPE_DELETE, 'Configuration', 'Delete', 'Delete unused status types'),
+  def(PRIV.STATUS_WORKFLOW_CONFIG, 'Configuration', 'Manage', 'Configure status workflow transitions'),
+  def(PRIV.DEFECT_WORKFLOW_VIEW, 'Configuration', 'View', 'View the defect status workflow'),
+  def(PRIV.DEFECT_WORKFLOW_UPDATE, 'Configuration', 'Update', 'Design and update the defect status workflow'),
+
+  def(PRIV.EMAIL_CONFIG, 'System Settings', 'Manage', 'Configure outbound email settings'),
+  def(PRIV.EMAIL_POINT_CONFIG, 'System Settings', 'Manage', 'Configure email notification touch points'),
+]
+
+export const findPrivilegeIdsByCode = (codes: string[]): string[] =>
+  mockPrivileges.filter((p) => codes.includes(p.code)).map((p) => p.id)

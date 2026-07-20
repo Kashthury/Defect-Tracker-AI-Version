@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  @apply bg-ink-50 text-ink-900 antialiased;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: #2E8FC9;
+  color: white;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #B9C1D1;
+  border-radius: 999px;
+  border: 2px solid #F6F8FB;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #8B96AC;
+}
+
+/* Visible keyboard focus for accessibility */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #2E8FC9;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+.status-dot {
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.6);
+}
+
+.table-sticky-header thead th {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background-color: #12507F;
+}
+
+.table-sticky-header thead th.sticky-col-header {
+  z-index: 40;
+}
+
+/* Additive utilities used by the Test Case Execution page redesign. */
+@keyframes exec-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.exec-animate-in {
+  animation: exec-fade-in 0.18s ease-out;
+}
+@keyframes exec-count-up {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.exec-count {
+  animation: exec-count-up 0.32s ease-out;
+}
+
+@keyframes exec-modal-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.exec-modal-in {
+  animation: exec-modal-in 0.16s ease-out;
+}
