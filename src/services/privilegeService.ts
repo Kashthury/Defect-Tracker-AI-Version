@@ -17,6 +17,10 @@ import { DEFAULT_EMPLOYEE_ROLE_ID, employeeRoleMap, mockUserOverrides } from '@/
 import { mockRoles } from '@/mock/roles'
 import { mockEmployeeRecords } from '@/mock/employees'
 import { fail, mockDelay, ok, paginate } from './apiClient'
+import { getConfigurationPage } from './configurationApi'
+
+const PRIVILEGES_ENDPOINT = '/configuration/privileges'
+const ROLES_ENDPOINT = '/configuration/roles'
 
 const roleName = (roleId: string): string =>
   mockRoles.find((r) => r.id === roleId)?.name ?? 'Unassigned'
@@ -40,28 +44,39 @@ export const privilegeService = {
    * Supports search (name, code) and filters (module, status) via `paginate`.
    */
   async getPrivileges(request: PageRequest): Promise<ApiResponse<Page<PrivilegeDefinition>>> {
-    await mockDelay()
-    return ok(paginate(mockPrivilegeCatalog, request, ['name', 'code']))
+    return getConfigurationPage(PRIVILEGES_ENDPOINT, request)
   },
 
   /** Single privilege by id — used by the read-only detail modal. */
   async getPrivilegeById(id: string): Promise<ApiResponse<PrivilegeDefinition>> {
-    await mockDelay(200)
-    const found = mockPrivilegeCatalog.find((p) => p.id === id)
+    const response = await getConfigurationPage<PrivilegeDefinition>(PRIVILEGES_ENDPOINT, {
+      pageNumber: 0,
+      pageSize: 1000,
+    })
+    if (!response.success) return fail(response.message)
+    const found = response.data.content.find((p) => String(p.id) === String(id))
     if (!found) return fail('Privilege not found.')
     return ok(found)
   },
 
   /** Full active catalogue (unpaginated) for building assignment trees. */
   async getAssignablePrivileges(): Promise<ApiResponse<PrivilegeDefinition[]>> {
-    await mockDelay(200)
-    return ok(activePrivileges())
+    const response = await getConfigurationPage<PrivilegeDefinition>(PRIVILEGES_ENDPOINT, {
+      pageNumber: 0,
+      pageSize: 1000,
+    })
+    if (!response.success) return fail(response.message)
+    return ok(response.data.content.filter((privilege) => privilege.status === 'ACTIVE'), response.message)
   },
 
   /** Roles available for privilege assignment (active + inactive, for reference). */
   async getAssignableRoles(): Promise<ApiResponse<{ id: string; name: string }[]>> {
-    await mockDelay(200)
-    return ok(mockRoles.map((r) => ({ id: r.id, name: r.name })))
+    const response = await getConfigurationPage<{ id: string; name: string }>(ROLES_ENDPOINT, {
+      pageNumber: 0,
+      pageSize: 1000,
+    })
+    if (!response.success) return fail(response.message)
+    return ok(response.data.content.map(({ id, name }) => ({ id, name })), response.message)
   },
 
   /** Currently-assigned privilege codes for a role. */

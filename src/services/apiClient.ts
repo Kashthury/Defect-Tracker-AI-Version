@@ -8,6 +8,11 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   query?: Record<string, string | number | boolean | undefined | null>
 }
 
+interface BackendFieldError {
+  field?: string
+  message?: string
+}
+
 const REQUEST_TIMEOUT_MS = 20_000
 
 const clearInvalidSession = () => {
@@ -55,7 +60,11 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       return fail<T>('The backend returned an invalid response.')
     }
     if (!response.ok) {
-      const message = typeof payload === 'object' && payload && 'message' in payload ? String(payload.message) : `Request failed with status ${response.status}.`
+      const errorPayload = typeof payload === 'object' && payload ? payload as { message?: unknown; errors?: BackendFieldError[] } : undefined
+      const fieldMessage = Array.isArray(errorPayload?.errors)
+        ? errorPayload.errors.map((error) => error.message).filter(Boolean).join(' ')
+        : ''
+      const message = fieldMessage || (errorPayload?.message ? String(errorPayload.message) : `Request failed with status ${response.status}.`)
       if (response.status === 401 && !url.pathname.endsWith('/auth/login')) {
         clearInvalidSession()
         window.dispatchEvent(new CustomEvent('auth:unauthorized', { detail: message }))
@@ -63,7 +72,15 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       }
       return fail<T>(message)
     }
-    if (typeof payload === 'object' && payload && 'success' in payload && 'data' in payload) return payload as ApiResponse<T>
+    if (typeof payload === 'object' && payload && 'success' in payload) {
+      const envelope = payload as Partial<ApiResponse<T>>
+      return {
+        success: Boolean(envelope.success),
+        message: envelope.message ? String(envelope.message) : 'OK',
+        data: ('data' in envelope ? envelope.data : null) as T,
+        timestamp: envelope.timestamp ? String(envelope.timestamp) : new Date().toISOString(),
+      }
+    }
     return ok(payload as T)
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') return fail<T>('The backend request timed out. Please try again.')

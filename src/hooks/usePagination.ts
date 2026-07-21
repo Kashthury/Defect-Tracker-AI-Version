@@ -77,7 +77,10 @@ export function usePagination<T>({
     sortBy,
     sortDir,
     setPageNumber,
-    setPageSize,
+    setPageSize: (size: PageSizeOption) => {
+      setPageNumber(0)
+      setPageSize(size)
+    },
     setSearch,
     setSortBy,
     setSortDir,

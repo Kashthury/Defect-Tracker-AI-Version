@@ -23,6 +23,8 @@ export interface Role {
 export interface Designation {
   id: string
   title: string
+  active?: boolean
+  employeeCount?: number
 }
 
 export interface Employee {

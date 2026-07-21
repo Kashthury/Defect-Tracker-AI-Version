@@ -9,7 +9,6 @@ import { Button } from '@/components/common/Button'
 import { usePagination } from '@/hooks/usePagination'
 import { designationService } from '@/services/designationService'
 import { Designation } from '@/types/auth'
-import { mockEmployeeRecords } from '@/mock/employees'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/context/ToastContext'
 import { useConfirm } from '@/context/ConfirmContext'
@@ -42,8 +41,6 @@ export const DesignationListPage: React.FC = () => {
     setSortDir,
     reload,
   } = usePagination<Designation>({ fetcher, initialPageSize: 10, initialSortBy: 'title' })
-
-  const headcount = (id: string) => mockEmployeeRecords.filter((e) => e.designationId === id).length
 
   const handleSearch = () => setSearch(searchText)
 
@@ -81,7 +78,7 @@ export const DesignationListPage: React.FC = () => {
       key: 'headcount',
       header: 'Employees',
       align: 'right',
-      render: (d) => <span className="text-ink-600">{headcount(d.id)}</span>,
+      render: (d) => <span className="text-ink-600">{d.employeeCount ?? '—'}</span>,
     },
     {
       key: 'actions',
