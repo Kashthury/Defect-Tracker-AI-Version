@@ -8,20 +8,15 @@ import { useForm } from '@/hooks/useForm'
 import { required, email as emailValidator, composeValidators } from '@/utils/validation'
 import { ROUTES } from '@/constants/routes'
 import { APP_NAME } from '@/constants/app'
+import { Loader } from '@/components/common/Loader'
 
 interface LoginFormValues {
   email: string
   password: string
 }
 
-const DEMO_ACCOUNTS = [
-  { label: 'System Admin', email: 'ada.fernando@defecttrack.io' },
-  { label: 'Project Manager', email: 'priya.raghavan@defecttrack.io' },
-  { label: 'QA Engineer', email: 'arjun.mehta@defecttrack.io' },
-]
-
 export const LoginPage: React.FC = () => {
-  const { login, isAuthenticated, isLoggingIn, loginError, sessionExpiredReason, clearSessionExpiredReason } = useAuth()
+  const { login, isAuthenticated, isInitializing, isLoggingIn, loginError, sessionExpiredReason, clearSessionExpiredReason } = useAuth()
   const navigate = useNavigate()
   const [submitError, setSubmitError] = useState<string | null>(null)
 
@@ -33,6 +28,8 @@ export const LoginPage: React.FC = () => {
     },
   })
 
+  if (isInitializing) return <div className="flex min-h-screen items-center justify-center bg-ink-50"><Loader label="Restoring your session…" size="lg" /></div>
+
   if (isAuthenticated) {
     return <Navigate to={ROUTES.DASHBOARD} replace />
   }
@@ -42,15 +39,10 @@ export const LoginPage: React.FC = () => {
     clearSessionExpiredReason()
     setSubmitError(null)
     if (!form.validateAll()) return
-    const success = await login({ email: form.values.email.trim(), password: form.values.password })
+    const success = await login({ email: form.values.email.trim(), password: form.values.password.trim() })
     if (success) {
       navigate(ROUTES.DASHBOARD, { replace: true })
     }
-  }
-
-  const fillDemo = (demoEmail: string) => {
-    form.setValue('email', demoEmail)
-    form.setValue('password', 'Passw0rd!')
   }
 
   return (
@@ -128,21 +120,6 @@ export const LoginPage: React.FC = () => {
               </Button>
             </form>
 
-            <div className="mt-6 border-t border-ink-100 pt-4">
-              <p className="mb-2 text-xs font-medium text-ink-500">Quick demo sign-in</p>
-              <div className="flex flex-wrap gap-1.5">
-                {DEMO_ACCOUNTS.map((acc) => (
-                  <button
-                    key={acc.email}
-                    type="button"
-                    onClick={() => fillDemo(acc.email)}
-                    className="rounded-full border border-ink-200 px-2.5 py-1 text-xs font-medium text-ink-600 hover:border-brand-400 hover:text-brand-600"
-                  >
-                    {acc.label}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
       </div>

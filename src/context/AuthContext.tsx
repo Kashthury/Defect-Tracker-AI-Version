@@ -23,7 +23,11 @@ function readStoredSession(): AuthSession | null {
     const raw = sessionStorage.getItem(SESSION_STORAGE_KEY)
     if (!raw) return null
     const parsed: AuthSession = JSON.parse(raw)
-    if (parsed.expiresAt < Date.now()) return null
+    if (!parsed.token || !parsed.user || parsed.expiresAt <= Date.now()) {
+      sessionStorage.removeItem(SESSION_STORAGE_KEY)
+      sessionStorage.removeItem(SELECTED_PROJECT_STORAGE_KEY)
+      return null
+    }
     return parsed
   } catch {
     return null
@@ -44,33 +48,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return
     }
 
-    // Re-resolve privileges from current roles (mimics GET /auth/me) so newly
-    // added privileges are reflected in an existing session without requiring
-    // the user to log out and back in. Falls back to the stored snapshot if
-    // the refresh fails.
-    let cancelled = false
-    authService
-      .getCurrentUser(stored.user.id)
-      .then((response) => {
-        if (cancelled) return
-        if (response.success) {
-          const refreshed: AuthSession = { ...stored, user: response.data }
-          sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(refreshed))
-          setSession(refreshed)
-        } else {
-          setSession(stored)
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setSession(stored)
-      })
-      .finally(() => {
-        if (!cancelled) setIsInitializing(false)
-      })
+    setSession(stored)
+    setIsInitializing(false)
+  }, [])
 
-    return () => {
-      cancelled = true
+  useEffect(() => {
+    const handleUnauthorized = (event: Event) => {
+      const reason = event instanceof CustomEvent ? String(event.detail || 'Your session is no longer valid.') : 'Your session is no longer valid.'
+      setSession(null)
+      setSessionExpiredReason(reason)
     }
+    window.addEventListener('auth:unauthorized', handleUnauthorized)
+    return () => window.removeEventListener('auth:unauthorized', handleUnauthorized)
   }, [])
 
   const login = useCallback(async (credentials: LoginCredentials) => {
@@ -95,7 +84,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     sessionStorage.removeItem(SELECTED_PROJECT_STORAGE_KEY)
     setSession(null)
     if (reason) setSessionExpiredReason(reason)
-    authService.logout()
   }, [])
 
   const clearSessionExpiredReason = useCallback(() => setSessionExpiredReason(null), [])

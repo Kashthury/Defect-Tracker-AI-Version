@@ -1,81 +1,100 @@
 import { ApiResponse } from '@/types/common'
-import { AuthenticatedUser, AuthSession, LoginCredentials, Privilege } from '@/types/auth'
-import { mockEmployeeRecords } from '@/mock/employees'
-import { mockRoles } from '@/mock/roles'
-import { mockPrivileges } from '@/mock/privileges'
-import { mockDesignations } from '@/mock/designations'
-import { mockDelay, ok, fail } from './apiClient'
+import { AuthenticatedUser, AuthSession, LoginCredentials, Privilege, Role } from '@/types/auth'
+import { apiRequest, fail, ok } from './apiClient'
 
-function resolvePrivilegesForRoleIds(roleIds: string[]): Privilege[] {
-  const roles = mockRoles.filter((r) => roleIds.includes(r.id))
-  const privilegeIdSet = new Set(roles.flatMap((r) => r.privilegeIds))
-  return mockPrivileges.filter((p) => privilegeIdSet.has(p.id))
+type JsonObject = Record<string, unknown>
+
+const asObject = (value: unknown): JsonObject =>
+  typeof value === 'object' && value !== null ? value as JsonObject : {}
+
+const asString = (...values: unknown[]) => {
+  const value = values.find((item) => typeof item === 'string' && item.length > 0)
+  return typeof value === 'string' ? value : ''
 }
 
-function buildAuthenticatedUser(employeeId: string): AuthenticatedUser | null {
-  const employee = mockEmployeeRecords.find((e) => e.id === employeeId)
-  if (!employee) return null
+const asArray = (value: unknown): unknown[] => Array.isArray(value) ? value : []
 
-    const roles = mockRoles.filter((r) => r.id === 'role-super-user' || r.id === 'role-system-admin') // simplified mock mapping since the new Employee doesn't track roles
-    const designation = mockDesignations.find((d) => d.id === employee.designationId)
-  
-    return {
-      id: employee.id,
-      fullName: `${employee.firstName} ${employee.lastName}`,
-      email: employee.email,
-      avatarColor: employee.avatarColor,
-      designation: designation?.title ?? 'Unknown',
-      roles,
-      privileges: resolvePrivilegesForRoleIds(roles.map(r => r.id)),
-    }
+const mapPrivilege = (value: unknown): Privilege => {
+  const item = asObject(value)
+  const code = asString(item.code, item.privilegeCode, item.name, value)
+  return {
+    id: asString(item.id, item.privilegeId, code),
+    code,
+    module: asString(item.module, item.moduleName),
+    action: asString(item.action, item.actionName),
+    description: asString(item.description),
   }
-  
-  export const authService = {
-    /**
-     * Mimics POST /api/auth/login.
-     * Loads: User -> Role(s) -> Privileges, exactly as a real backend
-     * would resolve them via joins, then issues a mock bearer token.
-     */
-    async login(credentials: LoginCredentials): Promise<ApiResponse<AuthSession>> {
-      await mockDelay(500)
-  
-      const email = credentials.email.trim().toLowerCase()
-      const employee = mockEmployeeRecords.find((e) => e.email.toLowerCase() === email)
-  
-      if (!employee) {
-        return fail('No account found for this email address.')
-      }
-      if (employee.status !== 'ACTIVE') {
-        return fail('This account has been deactivated. Contact your administrator.')
-      }
-    if (credentials.password !== 'Passw0rd!') {
-      return fail('Incorrect email or password.')
-    }
+}
 
-    const user = buildAuthenticatedUser(employee.id)
-    if (!user) return fail('Unable to resolve user profile.')
+const mapRole = (value: unknown): Role => {
+  const item = asObject(value)
+  const privileges = asArray(item.privileges).map(mapPrivilege)
+  return {
+    id: asString(item.id, item.roleId, item.code, item.name, value),
+    name: asString(item.name, item.roleName, item.code, value),
+    description: asString(item.description),
+    privilegeIds: privileges.map((privilege) => privilege.id),
+  }
+}
 
-    const now = Date.now()
-    const session: AuthSession = {
-      token: `mock-jwt.${btoa(employee.id)}.${now}`,
-      issuedAt: now,
-      expiresAt: now + 8 * 60 * 60 * 1000,
-      user,
-    }
+const mapUser = (value: unknown): AuthenticatedUser | null => {
+  const user = asObject(value)
+  if (Object.keys(user).length === 0) return null
+  const rolesSource = asArray(user.roles ?? user.authorities)
+  const roles = rolesSource.map(mapRole)
+  const directPrivileges = asArray(user.privileges ?? user.permissions).map(mapPrivilege)
+  const rolePrivileges = rolesSource.flatMap((role) => asArray(asObject(role).privileges).map(mapPrivilege))
+  const privileges = [...directPrivileges, ...rolePrivileges].filter(
+    (privilege, index, all) => privilege.code && all.findIndex((item) => item.code === privilege.code) === index,
+  )
+  const firstName = asString(user.firstName)
+  const lastName = asString(user.lastName)
+  return {
+    id: asString(user.id, user.userId, user.employeeId),
+    fullName: asString(user.fullName, user.name, `${firstName} ${lastName}`.trim(), user.email),
+    email: asString(user.email, user.username),
+    avatarColor: asString(user.avatarColor) || '#2563eb',
+    designation: asString(user.designationName, asObject(user.designation).title, asObject(user.designation).name),
+    roles,
+    privileges,
+  }
+}
 
-    return ok(session, 'Login successful.')
+const jwtExpiry = (token: string): number | undefined => {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as { exp?: number }
+    return payload.exp ? payload.exp * 1000 : undefined
+  } catch {
+    return undefined
+  }
+}
+
+const mapSession = (value: unknown): AuthSession | null => {
+  const data = asObject(value)
+  const token = asString(data.token, data.accessToken, data.access_token, data.jwtToken, data.jwt)
+  const user = mapUser(data.user ?? data.employee ?? data.profile)
+  if (!token || !user) return null
+  const issuedAt = Date.now()
+  const expiresIn = Number(data.expiresIn ?? data.expires_in ?? 0)
+  return {
+    token,
+    user,
+    issuedAt,
+    expiresAt: jwtExpiry(token) ?? (expiresIn > 0 ? issuedAt + expiresIn * 1000 : issuedAt + 8 * 60 * 60 * 1000),
+  }
+}
+
+export const authService = {
+  async login(credentials: LoginCredentials): Promise<ApiResponse<AuthSession>> {
+    const response = await apiRequest<unknown>('/auth/login', {
+      method: 'POST',
+      body: { email: credentials.email.trim(), password: credentials.password.trim() },
+    })
+    if (!response.success) return fail(response.message)
+    const session = mapSession(response.data)
+    return session
+      ? ok(session, response.message || 'Login successful.')
+      : fail('The login response did not contain a valid access token and user profile.')
   },
 
-  async logout(): Promise<ApiResponse<null>> {
-    await mockDelay(150)
-    return ok(null, 'Logged out.')
-  },
-
-  /** Mimics GET /api/auth/me — used to rehydrate a session from a stored token. */
-  async getCurrentUser(userId: string): Promise<ApiResponse<AuthenticatedUser>> {
-    await mockDelay(150)
-    const user = buildAuthenticatedUser(userId)
-    if (!user) return fail('Session is no longer valid.')
-    return ok(user)
-  },
 }

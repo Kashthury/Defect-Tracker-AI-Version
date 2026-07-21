@@ -1,4 +1,75 @@
 import { ApiResponse, Page, PageRequest } from '@/types/common'
+import { SELECTED_PROJECT_STORAGE_KEY, SESSION_STORAGE_KEY } from '@/constants/app'
+
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1').replace(/\/$/, '')
+
+interface RequestOptions extends Omit<RequestInit, 'body'> {
+  body?: unknown
+  query?: Record<string, string | number | boolean | undefined | null>
+}
+
+const REQUEST_TIMEOUT_MS = 20_000
+
+const clearInvalidSession = () => {
+  sessionStorage.removeItem(SESSION_STORAGE_KEY)
+  sessionStorage.removeItem(SELECTED_PROJECT_STORAGE_KEY)
+}
+
+const getBearerToken = () => {
+  try {
+    const stored = sessionStorage.getItem(SESSION_STORAGE_KEY)
+    if (!stored) return undefined
+    return (JSON.parse(stored) as { token?: string }).token
+  } catch {
+    return undefined
+  }
+}
+
+export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
+  const url = new URL(`${API_BASE_URL}/${path.replace(/^\//, '')}`)
+  Object.entries(options.query ?? {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value))
+  })
+
+  const token = getBearerToken()
+  const headers = new Headers(options.headers)
+  headers.set('Accept', 'application/json')
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  if (options.body !== undefined && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
+
+  try {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      signal: options.signal ?? controller.signal,
+      body: options.body instanceof FormData ? options.body : options.body === undefined ? undefined : JSON.stringify(options.body),
+    })
+    window.clearTimeout(timeout)
+    const contentType = response.headers.get('content-type') ?? ''
+    let payload: unknown
+    try {
+      payload = contentType.includes('application/json') ? await response.json() : await response.text()
+    } catch {
+      return fail<T>('The backend returned an invalid response.')
+    }
+    if (!response.ok) {
+      const message = typeof payload === 'object' && payload && 'message' in payload ? String(payload.message) : `Request failed with status ${response.status}.`
+      if (response.status === 401 && !url.pathname.endsWith('/auth/login')) {
+        clearInvalidSession()
+        window.dispatchEvent(new CustomEvent('auth:unauthorized', { detail: message }))
+        if (window.location.pathname !== '/login') window.location.assign('/login')
+      }
+      return fail<T>(message)
+    }
+    if (typeof payload === 'object' && payload && 'success' in payload && 'data' in payload) return payload as ApiResponse<T>
+    return ok(payload as T)
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') return fail<T>('The backend request timed out. Please try again.')
+    return fail<T>('Unable to connect to the backend API. Check that the server is running and try again.')
+  }
+}
 
 /**
  * Simulates real network latency so loading states behave like they would
