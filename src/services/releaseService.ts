@@ -10,7 +10,8 @@ import {
   RELEASE_STATUSES,
   UpdateReleasePayload,
 } from '@/types/release'
-import { fail, mockDelay, ok, paginate } from './apiClient'
+import { apiRequest, fail, mockDelay, ok } from './apiClient'
+import { getConfigurationPage } from './configurationApi'
 
 let nextReleaseId = mockReleases.length + 1
 
@@ -87,48 +88,43 @@ const validateRelease = (
 
 export const releaseService = {
   async getReleases(request: PageRequest): Promise<ApiResponse<Page<ReleaseRecord>>> {
-    await mockDelay()
-    return ok(paginate(mockReleases, request, ['name', 'version', 'description']))
+    const projectId = String(request.filters?.projectId ?? '')
+    if (!projectId) return fail('Project is required to load releases.')
+    const { projectId: _projectId, ...filters } = request.filters ?? {}
+    void _projectId
+    return getConfigurationPage(`/projects/${encodeURIComponent(projectId)}/releases`, {
+      ...request,
+      filters,
+    })
   },
 
   async getReleaseById(
     projectId: string,
     releaseId: string,
   ): Promise<ApiResponse<ReleaseRecord>> {
-    await mockDelay()
-    const release = mockReleases.find(
-      (item) => item.id === releaseId && item.projectId === projectId,
-    )
-    if (!release) return fail('Release not found.')
-    return ok({ ...release })
+    const response = await this.getReleases({
+      pageNumber: 0,
+      pageSize: 1000,
+      filters: { projectId },
+    })
+    if (!response.success) return fail(response.message)
+    const release = response.data.content.find((item) => String(item.id) === String(releaseId))
+    return release ? ok(release, response.message) : fail('Release not found.')
   },
 
   async createRelease(
     projectId: string,
     payload: CreateReleasePayload,
   ): Promise<ApiResponse<ReleaseRecord>> {
-    await mockDelay(500)
-    const validationError = validateRelease(projectId, payload)
-    if (validationError) return fail(validationError)
-
-    const releaseType = mockReleaseTypes.find((item) => item.id === payload.releaseTypeId)!
-    const now = new Date().toISOString()
-    const release: ReleaseRecord = {
-      id: `release-${nextReleaseId++}`,
-      projectId,
-      name: normalizeText(payload.name),
-      version: normalizeText(payload.version),
-      releaseTypeId: payload.releaseTypeId,
-      releaseTypeName: releaseType.name,
-      description: payload.description.trim(),
-      releaseDate: payload.releaseDate,
-      status: payload.status,
-      createdAt: now,
-      updatedAt: now,
-    }
-    mockReleases.unshift(release)
-    syncCurrentRelease(projectId)
-    return ok({ ...release }, 'Release created successfully.')
+    return apiRequest(`/projects/${encodeURIComponent(projectId)}/releases`, {
+      method: 'POST',
+      body: {
+        ...payload,
+        name: normalizeText(payload.name),
+        version: normalizeText(payload.version),
+        description: payload.description.trim(),
+      },
+    })
   },
 
   async updateRelease(
@@ -214,9 +210,9 @@ export const releaseService = {
   },
 
   async getReleaseOverview(projectId: string): Promise<ApiResponse<ReleaseOverview>> {
-    await mockDelay()
-    if (!mockProjects.some((item) => item.id === projectId)) return fail('Project not found.')
-    const releases = mockReleases.filter((item) => item.projectId === projectId)
+    const response = await this.getReleases({ pageNumber: 0, pageSize: 1000, filters: { projectId } })
+    if (!response.success) return fail(response.message)
+    const releases = response.data.content
     const upcoming = releases
       .filter((item) => item.status === 'ON_HOLD')
       .sort((a, b) => a.releaseDate.localeCompare(b.releaseDate))[0]

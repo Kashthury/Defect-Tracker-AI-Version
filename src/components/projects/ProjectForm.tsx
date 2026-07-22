@@ -1,18 +1,19 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { Card } from '@/components/common/Card'
 import { Dropdown } from '@/components/common/Dropdown'
 import { Input } from '@/components/common/Input'
 import { FormActions } from '@/components/forms/FormActions'
 import { FormRow } from '@/components/forms/FormRow'
-import { ROLE_TYPES, formatRoleType } from '@/constants/roleTypes'
+import { ROLE_TYPES } from '@/constants/roleTypes'
 import { useForm } from '@/hooks/useForm'
 import { designationService } from '@/services/designationService'
+import { employeeService } from '@/services/employeeService'
 import { projectAllocationService } from '@/services/projectAllocationService'
 import { roleService } from '@/services/roleService'
 import { Designation } from '@/types/auth'
-import { AvailableProjectManager, ProjectFormPayload } from '@/types/project'
-import { RoleRecord } from '@/types/role'
+import { EmployeeDropdownResponse } from '@/types/employee'
+import { ProjectFormPayload } from '@/types/project'
 import { email } from '@/utils/validation'
 
 interface ProjectFormProps {
@@ -41,11 +42,12 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
   onSubmit,
 }) => {
   const [designations, setDesignations] = useState<Designation[]>([])
-  const [roles, setRoles] = useState<RoleRecord[]>([])
-  const [availableManagers, setAvailableManagers] = useState<AvailableProjectManager[]>([])
+  const [projectManagerRoleId, setProjectManagerRoleId] = useState('')
+  const [availableManagers, setAvailableManagers] = useState<EmployeeDropdownResponse[]>([])
   const [isLoadingReferences, setIsLoadingReferences] = useState(true)
   const [isLoadingManagers, setIsLoadingManagers] = useState(false)
   const [referenceError, setReferenceError] = useState<string | null>(null)
+  const [managerError, setManagerError] = useState<string | null>(null)
   const [dateWarnings, setDateWarnings] = useState<string[]>([])
 
   const form = useForm<ProjectFormPayload>({
@@ -64,7 +66,6 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
       },
       designationId: { required: true, label: 'Designation' },
       managerId: { required: true, label: 'Project Manager' },
-      projectRoleId: { required: true, label: 'Project Role' },
       allocationPercentage: {
         required: true,
         label: 'Allocation Percentage',
@@ -105,16 +106,15 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
           return
         }
         setDesignations(designationResult.data.content)
-        const sortedRoles = [...roleResult.data.content].sort((a, b) => {
-          const aPriority = a.roleType === ROLE_TYPES.PROJECT_MANAGER ? 0 : 1
-          const bPriority = b.roleType === ROLE_TYPES.PROJECT_MANAGER ? 0 : 1
-          return aPriority - bPriority || a.name.localeCompare(b.name)
-        })
-        setRoles(sortedRoles)
-        if (!form.values.projectRoleId) {
-          const preferred = sortedRoles.find((role) => role.roleType === ROLE_TYPES.PROJECT_MANAGER)
-          if (preferred) form.setValue('projectRoleId', preferred.id)
+        const projectManagerRole = roleResult.data.content.find(
+          (role) => role.roleType === ROLE_TYPES.PROJECT_MANAGER,
+        )
+        if (!projectManagerRole) {
+          setReferenceError('An active Project Manager role is required to create or update a project.')
+          return
         }
+        setProjectManagerRoleId(projectManagerRole.id)
+        form.setValue('projectRoleId', projectManagerRole.id)
       })
       .catch(() => {
         if (active) setReferenceError('Unable to load project form reference data.')
@@ -129,34 +129,31 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
   }, [])
 
   useEffect(() => {
-    if (
-      !form.values.designationId ||
-      !form.values.allocationStartDate ||
-      !form.values.allocationEndDate ||
-      form.values.allocationEndDate < form.values.allocationStartDate ||
-      form.values.allocationPercentage <= 0
-    ) {
+    if (!form.values.designationId) {
       setAvailableManagers([])
+      setManagerError(null)
+      setIsLoadingManagers(false)
       return
     }
 
     let active = true
     setIsLoadingManagers(true)
-    projectAllocationService
-      .getAvailableProjectManagers(
-        form.values.designationId,
-        form.values.allocationStartDate,
-        form.values.allocationEndDate,
-        form.values.allocationPercentage,
-        projectId,
-      )
+    setManagerError(null)
+    employeeService
+      .getEmployeesByDesignation(form.values.designationId)
       .then((result) => {
         if (!active) return
         if (result.success) setAvailableManagers(result.data)
-        else setReferenceError(result.message)
+        else {
+          setAvailableManagers([])
+          setManagerError(result.message)
+        }
       })
       .catch(() => {
-        if (active) setReferenceError('Unable to calculate Project Manager availability.')
+        if (active) {
+          setAvailableManagers([])
+          setManagerError('Unable to load active employees for the selected designation.')
+        }
       })
       .finally(() => {
         if (active) setIsLoadingManagers(false)
@@ -164,13 +161,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
     return () => {
       active = false
     }
-  }, [
-    form.values.designationId,
-    form.values.allocationStartDate,
-    form.values.allocationEndDate,
-    form.values.allocationPercentage,
-    projectId,
-  ])
+  }, [form.values.designationId])
 
   useEffect(() => {
     if (mode !== 'edit' || !projectId || !form.values.startDate || !form.values.endDate) return
@@ -189,22 +180,18 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
     label: designation.title,
     value: designation.id,
   }))
-  const roleOptions = roles.map((role) => ({
-    label: `${role.name} (${formatRoleType(role.roleType)})`,
-    value: role.id,
-  }))
   const managerOptions = availableManagers.map((manager) => ({
-    label: `${manager.employeeName} | ${manager.designationName} | Current ${manager.currentAllocationPercentage}% | Available ${manager.availablePercentage}%`,
-    value: manager.employeeId,
+    label: `${manager.employeeCode} - ${manager.fullName}`,
+    value: String(manager.id),
   }))
-  const selectedManager = useMemo(
-    () => availableManagers.find((manager) => manager.employeeId === form.values.managerId),
-    [availableManagers, form.values.managerId],
-  )
 
   const handleSubmit = () => {
     if (!form.validateAll()) return
-    onSubmit(form.values)
+    if (!projectManagerRoleId) {
+      setReferenceError('An active Project Manager role is required to create or update a project.')
+      return
+    }
+    onSubmit({ ...form.values, projectRoleId: projectManagerRoleId })
   }
 
   const handleProjectStartDate = (value: string) => {
@@ -286,9 +273,9 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
         </div>
       </Card>
 
-      <Card title="Project Manager Selection" subtitle="Availability is calculated from overlapping active allocations.">
+      <Card title="Project Manager Selection" subtitle="Select an active employee from the chosen designation.">
         <div className="flex flex-col gap-5">
-          <FormRow>
+          <FormRow columns={3}>
             <Dropdown
               label="Designation"
               name="designationId"
@@ -310,20 +297,16 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
               value={form.values.managerId}
               error={form.touched.managerId ? form.errors.managerId : undefined}
               disabled={isLoadingManagers || !form.values.designationId}
-              placeholder={isLoadingManagers ? 'Calculating availability...' : 'Select available manager...'}
+              placeholder={
+                !form.values.designationId
+                  ? 'Select a designation first'
+                  : isLoadingManagers
+                    ? 'Loading project managers...'
+                    : availableManagers.length === 0
+                      ? 'No active employees found'
+                      : 'Select project manager...'
+              }
               onChange={(event) => form.setValue('managerId', event.target.value)}
-            />
-          </FormRow>
-          <FormRow>
-            <Dropdown
-              label="Project Role"
-              name="projectRoleId"
-              required
-              options={roleOptions}
-              value={form.values.projectRoleId}
-              error={form.touched.projectRoleId ? form.errors.projectRoleId : undefined}
-              disabled={isLoadingReferences}
-              onChange={(event) => form.setValue('projectRoleId', event.target.value)}
             />
             <Input
               label="Allocation Percentage"
@@ -360,17 +343,9 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
             />
           </FormRow>
 
-          {selectedManager && (
-            <div className="grid gap-3 border-y border-ink-100 py-3 sm:grid-cols-3">
-              <div><p className="text-xs text-ink-400">Current Allocation</p><p className="mt-1 text-sm font-semibold text-ink-800">{selectedManager.currentAllocationPercentage}%</p></div>
-              <div><p className="text-xs text-ink-400">Available Capacity</p><p className="mt-1 text-sm font-semibold text-signal-low">{selectedManager.availablePercentage}%</p></div>
-              <div><p className="text-xs text-ink-400">After Assignment</p><p className="mt-1 text-sm font-semibold text-brand-600">{selectedManager.currentAllocationPercentage + form.values.allocationPercentage}%</p></div>
-            </div>
-          )}
-          {form.values.managerId && !selectedManager && !isLoadingManagers && (
-            <p className="text-sm text-signal-critical">
-              This employee does not have enough available capacity for the selected date range and allocation percentage.
-            </p>
+          {managerError && <p className="text-sm text-signal-critical">{managerError}</p>}
+          {!managerError && form.values.designationId && !isLoadingManagers && availableManagers.length === 0 && (
+            <p className="text-sm text-ink-500">No active employees are available for this designation.</p>
           )}
         </div>
       </Card>
@@ -394,10 +369,11 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
           onSubmit={handleSubmit}
           submitLabel={mode === 'create' ? 'Create Project' : 'Save Changes'}
           isSubmitting={isSubmitting}
-          isSubmitDisabled={mode === 'edit' ? !form.canSubmit : false}
+          isSubmitDisabled={
+            isLoadingReferences || !projectManagerRoleId || (mode === 'edit' ? !form.canSubmit : false)
+          }
         />
       </div>
     </div>
   )
 }
-

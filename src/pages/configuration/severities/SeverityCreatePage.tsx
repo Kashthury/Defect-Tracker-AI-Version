@@ -23,7 +23,13 @@ export const SeverityCreatePage: React.FC = () => {
     initialValues: { name: '', description: '', weight: 10, color: DEFAULT_COLOR_PRESETS[0] },
     schema: {
       name: { required: true, label: 'Severity Name' },
-      weight: { required: true, label: 'Weight' },
+      weight: {
+        required: true,
+        label: 'Weight',
+        validate: (value) => Number.isFinite(value) && value >= 1
+          ? undefined
+          : 'Weight must be a number greater than or equal to 1.',
+      },
     },
   })
 

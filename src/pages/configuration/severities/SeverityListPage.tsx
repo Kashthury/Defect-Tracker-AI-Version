@@ -32,13 +32,9 @@ export const SeverityListPage: React.FC = () => {
     isLoading,
     error,
     search,
-    sortBy,
-    sortDir,
     setPageNumber,
     setPageSize,
     setSearch,
-    setSortBy,
-    setSortDir,
     reload,
   } = usePagination<SeverityConfig>({ fetcher, initialPageSize: 10, initialSortBy: 'weight', initialSortDir: 'desc' })
 
@@ -71,7 +67,6 @@ export const SeverityListPage: React.FC = () => {
     {
       key: 'name',
       header: 'Severity Name',
-      sortable: true,
       render: (severity) => (
         <div className="flex items-center gap-2.5">
           <span
@@ -90,7 +85,6 @@ export const SeverityListPage: React.FC = () => {
     {
       key: 'weight',
       header: 'Weight',
-      sortable: true,
       align: 'right',
       render: (severity) => <span className="font-medium text-ink-900">{formatNumber(severity.weight)}</span>,
     },
@@ -102,7 +96,6 @@ export const SeverityListPage: React.FC = () => {
     {
       key: 'createdAt',
       header: 'Created Date',
-      sortable: true,
       align: 'right',
       render: (severity) => <span className="text-ink-600">{formatDate(severity.createdAt)}</span>,
     },
@@ -190,16 +183,6 @@ export const SeverityListPage: React.FC = () => {
           isLoading={isLoading}
           error={error}
           onRetry={reload}
-          sortBy={sortBy}
-          sortDir={sortDir}
-          onSort={(key) => {
-            if (key === 'actions' || key === 'description' || key === 'color') return
-            if (sortBy === key) setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
-            else {
-              setSortBy(key)
-              setSortDir('asc')
-            }
-          }}
           onRowClick={
             hasPrivilege(PRIV.SEVERITY_UPDATE)
               ? (severity) => navigate(ROUTES.SEVERITY_EDIT.replace(':id', severity.id))

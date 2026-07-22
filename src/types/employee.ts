@@ -1,19 +1,68 @@
-/**
- * Employee Management module types.
- *
- * Separate from the lightweight `Employee` type in auth.ts which drives
- * login / session concerns. This richer type models the full employee
- * record managed via User Management → Employees.
- */
+export type Gender = 'MALE' | 'FEMALE' | 'OTHER'
 
+export interface EmployeeResponse {
+  id: number
+  employeeCode: string
+  firstName: string
+  lastName: string
+  fullName: string
+  gender: Gender
+  email: string
+  phoneNo: string
+  joinDate: string
+  designationId: number
+  designationName: string
+  active: boolean
+  profileImage?: string | null
+  avatarColor?: string | null
+  superUser: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface EmployeeCreateRequest {
+  firstName: string
+  lastName: string
+  gender: Gender
+  email: string
+  phoneNo: string
+  joinDate: string
+  designationId: number
+  profileImage?: string | null
+}
+
+export interface EmployeeUpdateRequest extends EmployeeCreateRequest {
+  active: boolean
+}
+
+export interface EmployeeDropdownResponse {
+  id: number
+  employeeCode: string
+  fullName: string
+  email: string
+  designationId: number
+  designationName: string
+}
+
+export interface EmployeeListParams {
+  search?: string
+  designationId?: number
+  gender?: Gender
+  active?: boolean
+  page?: number
+  size?: number
+  sortBy?: string
+  sortDir?: 'asc' | 'desc'
+}
+
+/** Legacy mock-only shape retained for unrelated allocation simulations. */
 export type EmployeeStatus = 'ACTIVE' | 'INACTIVE'
-export type Gender = 'Male' | 'Female'
-
+export type LegacyGender = 'Male' | 'Female'
 export interface Employee {
   id: string
   firstName: string
   lastName: string
-  gender: Gender
+  gender: LegacyGender
   designationId: string
   email: string
   phone: string
@@ -25,24 +74,5 @@ export interface Employee {
   updatedAt: string
 }
 
-export interface CreateEmployeePayload {
-  firstName: string
-  lastName: string
-  gender: Gender | ''
-  designationId: string
-  email: string
-  phone: string
-  joinDate: string
-  profileImage?: string
-}
-
-export interface UpdateEmployeePayload {
-  firstName: string
-  lastName: string
-  gender: Gender | ''
-  designationId: string
-  email: string
-  phone: string
-  joinDate: string
-  profileImage?: string
-}
+export type CreateEmployeePayload = EmployeeCreateRequest
+export type UpdateEmployeePayload = EmployeeUpdateRequest

@@ -1,99 +1,140 @@
-import { ApiResponse, Page, PageRequest } from '@/types/common'
-import { Employee, EmployeeStatus, CreateEmployeePayload, UpdateEmployeePayload } from '@/types/employee'
-import { mockEmployeeRecords } from '@/mock/employees'
-import { mockDelay, ok, fail, paginate } from './apiClient'
+import { ApiResponse, Page } from '@/types/common'
+import {
+  EmployeeCreateRequest,
+  EmployeeDropdownResponse,
+  EmployeeListParams,
+  EmployeeResponse,
+  EmployeeUpdateRequest,
+  Gender,
+} from '@/types/employee'
+import { apiRequest, fail, ok } from './apiClient'
 
-const colors = ['#12507F', '#3E8E64', '#C99A2E', '#C13B3B', '#6B4FA0', '#0D3B66', '#2E8FC9', '#8B5A2B', '#2D6A4F', '#7B2D8E']
+const ENDPOINT = '/employees'
 
-let nextId = mockEmployeeRecords.length + 1
+type BackendPage<T> = {
+  content?: T[]
+  page?: number
+  pageNumber?: number
+  number?: number
+  size?: number
+  pageSize?: number
+  totalElements?: number
+  totalPages?: number
+}
+
+type BackendEmployee = Partial<EmployeeResponse> & { phone?: string; status?: string }
+
+const mapEmployee = (item: BackendEmployee): EmployeeResponse => ({
+  id: Number(item.id ?? 0),
+  employeeCode: String(item.employeeCode ?? ''),
+  firstName: String(item.firstName ?? ''),
+  lastName: String(item.lastName ?? ''),
+  fullName: String(item.fullName ?? `${item.firstName ?? ''} ${item.lastName ?? ''}`.trim()),
+  gender: (item.gender ?? 'OTHER') as Gender,
+  email: String(item.email ?? ''),
+  phoneNo: String(item.phoneNo ?? item.phone ?? ''),
+  joinDate: String(item.joinDate ?? ''),
+  designationId: Number(item.designationId ?? 0),
+  designationName: String(item.designationName ?? ''),
+  active: item.active ?? item.status === 'ACTIVE',
+  profileImage: item.profileImage ?? null,
+  avatarColor: item.avatarColor ?? null,
+  superUser: Boolean(item.superUser),
+  createdAt: item.createdAt,
+  updatedAt: item.updatedAt,
+})
+
+const normalizeCreate = (payload: EmployeeCreateRequest): EmployeeCreateRequest => ({
+  firstName: payload.firstName.trim(),
+  lastName: payload.lastName.trim(),
+  gender: payload.gender,
+  email: payload.email.trim().toLowerCase(),
+  phoneNo: payload.phoneNo.trim(),
+  joinDate: payload.joinDate,
+  designationId: Number(payload.designationId),
+  profileImage: payload.profileImage?.trim() || null,
+})
+
+const mapResponse = (response: ApiResponse<BackendEmployee>): ApiResponse<EmployeeResponse> =>
+  response.success ? ok(mapEmployee(response.data), response.message) : fail(response.message)
+
+const asRows = <T,>(data: T[] | { content?: T[] }) => Array.isArray(data) ? data : data.content ?? []
 
 export const employeeService = {
-  async getEmployees(request: PageRequest): Promise<ApiResponse<Page<Employee>>> {
-    await mockDelay()
-    return ok(
-      paginate(mockEmployeeRecords, request, ['firstName', 'lastName', 'email', 'phone']),
+  async getEmployees(params: EmployeeListParams): Promise<ApiResponse<Page<EmployeeResponse>>> {
+    const response = await apiRequest<BackendPage<BackendEmployee>>(ENDPOINT, {
+      query: {
+        search: params.search?.trim() || undefined,
+        designationId: params.designationId,
+        gender: params.gender,
+        active: params.active,
+        page: params.page ?? 0,
+        size: Math.min(params.size ?? 10, 100),
+        sortBy: params.sortBy ?? 'firstName',
+        sortDir: params.sortDir ?? 'asc',
+      },
+    })
+    if (!response.success) return fail(response.message)
+    const pageNumber = response.data.page ?? response.data.pageNumber ?? response.data.number ?? params.page ?? 0
+    const pageSize = response.data.size ?? response.data.pageSize ?? params.size ?? 10
+    return ok({
+      content: (response.data.content ?? []).map(mapEmployee),
+      pageNumber,
+      pageSize,
+      totalElements: response.data.totalElements ?? 0,
+      totalPages: response.data.totalPages ?? 0,
+    }, response.message)
+  },
+
+  async getEmployeeById(id: string | number): Promise<ApiResponse<EmployeeResponse>> {
+    return mapResponse(await apiRequest<BackendEmployee>(`${ENDPOINT}/${encodeURIComponent(id)}`))
+  },
+
+  async createEmployee(payload: EmployeeCreateRequest): Promise<ApiResponse<EmployeeResponse>> {
+    return mapResponse(await apiRequest<BackendEmployee>(ENDPOINT, { method: 'POST', body: normalizeCreate(payload) }))
+  },
+
+  async updateEmployee(id: string | number, payload: EmployeeUpdateRequest): Promise<ApiResponse<EmployeeResponse>> {
+    const normalized = { ...normalizeCreate(payload), active: payload.active }
+    return mapResponse(await apiRequest<BackendEmployee>(`${ENDPOINT}/${encodeURIComponent(id)}`, { method: 'PUT', body: normalized }))
+  },
+
+  async updateEmployeeStatus(id: string | number, active: boolean): Promise<ApiResponse<EmployeeResponse>> {
+    return mapResponse(await apiRequest<BackendEmployee>(`${ENDPOINT}/${encodeURIComponent(id)}/status`, {
+      method: 'PATCH',
+      body: { active },
+    }))
+  },
+
+  async getEmployeeDropdown(): Promise<ApiResponse<EmployeeDropdownResponse[]>> {
+    return apiRequest(`${ENDPOINT}/dropdown`)
+  },
+
+  async getEmployeesByDesignation(designationId: string | number): Promise<ApiResponse<EmployeeDropdownResponse[]>> {
+    const response = await apiRequest<EmployeeDropdownResponse[] | { content?: EmployeeDropdownResponse[] }>(
+      `${ENDPOINT}/designation/${encodeURIComponent(designationId)}`,
     )
+    return response.success ? ok(asRows(response.data), response.message) : fail(response.message)
   },
 
-  async getEmployeeById(id: string): Promise<ApiResponse<Employee>> {
-    await mockDelay()
-    const employee = mockEmployeeRecords.find((e) => e.id === id)
-    if (!employee) return fail('Employee not found.')
-    return ok(employee)
-  },
-
-  async createEmployee(payload: CreateEmployeePayload): Promise<ApiResponse<Employee>> {
-    await mockDelay(500)
-    const duplicate = mockEmployeeRecords.find(
-      (e) => e.email.toLowerCase() === payload.email.trim().toLowerCase(),
+  async getProjectDevelopers(projectId: string | number, date?: string): Promise<ApiResponse<EmployeeDropdownResponse[]>> {
+    const response = await apiRequest<EmployeeDropdownResponse[] | { content?: EmployeeDropdownResponse[] }>(
+      `${ENDPOINT}/project/${encodeURIComponent(projectId)}/developers`, { query: { date } },
     )
-    if (duplicate) return fail('An employee with this email already exists.')
-
-    const now = new Date().toISOString()
-    const newEmployee: Employee = {
-      id: `emp-${String(nextId++).padStart(4, '0')}`,
-      firstName: payload.firstName.trim(),
-      lastName: payload.lastName.trim(),
-      gender: payload.gender as Employee['gender'],
-      designationId: payload.designationId,
-      email: payload.email.trim().toLowerCase(),
-      phone: payload.phone.trim(),
-      joinDate: payload.joinDate,
-      profileImage: payload.profileImage,
-      status: 'ACTIVE',
-      avatarColor: colors[Math.floor(Math.random() * colors.length)],
-      createdAt: now,
-      updatedAt: now,
-    }
-    mockEmployeeRecords.unshift(newEmployee)
-    return ok(newEmployee, 'Employee created successfully.')
+    return response.success ? ok(asRows(response.data), response.message) : fail(response.message)
   },
 
-  async updateEmployee(id: string, payload: UpdateEmployeePayload): Promise<ApiResponse<Employee>> {
-    await mockDelay(500)
-    const index = mockEmployeeRecords.findIndex((e) => e.id === id)
-    if (index === -1) return fail('Employee not found.')
-
-    const emailDuplicate = mockEmployeeRecords.find(
-      (e) => e.id !== id && e.email.toLowerCase() === payload.email.trim().toLowerCase(),
+  async getProjectQaEmployees(projectId: string | number, date?: string): Promise<ApiResponse<EmployeeDropdownResponse[]>> {
+    const response = await apiRequest<EmployeeDropdownResponse[] | { content?: EmployeeDropdownResponse[] }>(
+      `${ENDPOINT}/project/${encodeURIComponent(projectId)}/qa`, { query: { date } },
     )
-    if (emailDuplicate) return fail('An employee with this email already exists.')
-
-    const updated: Employee = {
-      ...mockEmployeeRecords[index],
-      firstName: payload.firstName.trim(),
-      lastName: payload.lastName.trim(),
-      gender: payload.gender as Employee['gender'],
-      designationId: payload.designationId,
-      email: payload.email.trim().toLowerCase(),
-      phone: payload.phone.trim(),
-      joinDate: payload.joinDate,
-      profileImage: payload.profileImage,
-      updatedAt: new Date().toISOString(),
-    }
-    mockEmployeeRecords[index] = updated
-    return ok(updated, 'Employee updated successfully.')
+    return response.success ? ok(asRows(response.data), response.message) : fail(response.message)
   },
 
-  async updateEmployeeStatus(id: string, status: EmployeeStatus): Promise<ApiResponse<Employee>> {
-    await mockDelay(400)
-    const index = mockEmployeeRecords.findIndex((e) => e.id === id)
-    if (index === -1) return fail('Employee not found.')
-
-    const updated: Employee = {
-      ...mockEmployeeRecords[index],
-      status,
-      updatedAt: new Date().toISOString(),
-    }
-    mockEmployeeRecords[index] = updated
-    return ok(updated, `Employee status changed to ${status}.`)
-  },
-
-  async deleteEmployee(id: string): Promise<ApiResponse<null>> {
-    await mockDelay(400)
-    const index = mockEmployeeRecords.findIndex((e) => e.id === id)
-    if (index === -1) return fail('Employee not found.')
-    mockEmployeeRecords.splice(index, 1)
-    return ok(null, 'Employee deleted successfully.')
+  async getProjectEmployeesByRole(projectId: string | number, roleType: string, date?: string): Promise<ApiResponse<EmployeeDropdownResponse[]>> {
+    const response = await apiRequest<EmployeeDropdownResponse[] | { content?: EmployeeDropdownResponse[] }>(
+      `${ENDPOINT}/project/${encodeURIComponent(projectId)}/role/${encodeURIComponent(roleType)}`, { query: { date } },
+    )
+    return response.success ? ok(asRows(response.data), response.message) : fail(response.message)
   },
 }

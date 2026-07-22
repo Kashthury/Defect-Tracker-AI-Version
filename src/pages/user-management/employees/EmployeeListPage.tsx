@@ -1,18 +1,12 @@
-import React, { useCallback } from 'react'
-import { Plus, UserCog, User, Trash2, Edit } from 'lucide-react'
+import React, { useCallback, useEffect, useState } from 'react'
+import { Edit, Eye, Plus, RotateCcw, UserCheck, UserX } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { Badge, Button, Filter, Pagination, Search, Table, TableColumn } from '@/components/common'
 import { PageHeader } from '@/components/layout/PageHeader'
-import { Table, TableColumn } from '@/components/common/Table'
-import { Pagination } from '@/components/common/Pagination'
-import { Search } from '@/components/common/Search'
-import { Filter } from '@/components/common/Filter'
-import { Badge } from '@/components/common/Badge'
-import { Button } from '@/components/common/Button'
-import { Dropdown } from '@/components/common/Dropdown'
-import { usePagination } from '@/hooks/usePagination'
 import { employeeService } from '@/services/employeeService'
-import { Employee, EmployeeStatus } from '@/types/employee'
-import { mockDesignations } from '@/mock/designations'
+import { designationService } from '@/services/designationService'
+import { EmployeeResponse, Gender } from '@/types/employee'
+import { Page, PageSizeOption } from '@/types/common'
 import { formatDate, initials } from '@/utils/format'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/context/ToastContext'
@@ -20,167 +14,50 @@ import { useConfirm } from '@/context/ConfirmContext'
 import { PRIV } from '@/constants/privileges'
 import { ROUTES } from '@/constants/routes'
 
+const genderLabel = (gender: Gender) => ({ MALE: 'Male', FEMALE: 'Female', OTHER: 'Other' }[gender])
+
 export const EmployeeListPage: React.FC = () => {
-  const { hasPrivilege } = useAuth()
-  const navigate = useNavigate()
-  const toast = useToast()
-  const confirm = useConfirm()
+  const { hasPrivilege } = useAuth(); const navigate = useNavigate(); const toast = useToast(); const confirm = useConfirm()
+  const [page, setPage] = useState<Page<EmployeeResponse> | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null)
+  const [searchInput, setSearchInput] = useState(''); const [search, setSearch] = useState('')
+  const [designationId, setDesignationId] = useState('All'); const [gender, setGender] = useState('All'); const [status, setStatus] = useState('All')
+  const [pageNumber, setPageNumber] = useState(0); const [pageSize, setPageSize] = useState<PageSizeOption>(10); const [sortBy, setSortBy] = useState('firstName'); const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [designationOptions, setDesignationOptions] = useState<{ label: string; value: string }[]>([])
 
-  const fetcher = useCallback((req: Parameters<typeof employeeService.getEmployees>[0]) => employeeService.getEmployees(req), [])
-  
-  const { 
-    page, 
-    isLoading, 
-    error, 
-    search, 
-    sortBy, 
-    sortDir, 
-    setPageNumber, 
-    setPageSize, 
-    setSearch, 
-    setSortBy, 
-    setSortDir, 
-    reload 
-  } = usePagination<Employee>({ fetcher, initialPageSize: 10 })
+  useEffect(() => { const timer = window.setTimeout(() => { setSearch(searchInput.trim()); setPageNumber(0) }, 400); return () => window.clearTimeout(timer) }, [searchInput])
+  useEffect(() => { designationService.getDesignations({ pageNumber: 0, pageSize: 100, sortBy: 'title', sortDir: 'asc', filters: { active: true } }).then((r) => r.success && setDesignationOptions(r.data.content.filter((d) => d.active !== false).map((d) => ({ label: d.title, value: d.id })))) }, [])
 
-  const designationName = (id: string) => mockDesignations.find((d) => d.id === id)?.title ?? '\u2014'
+  const load = useCallback(async () => {
+    setLoading(true); setError(null)
+    const result = await employeeService.getEmployees({ search: search || undefined, designationId: designationId === 'All' ? undefined : Number(designationId), gender: gender === 'All' ? undefined : gender as Gender, active: status === 'All' ? undefined : status === 'ACTIVE', page: pageNumber, size: pageSize, sortBy, sortDir })
+    if (result.success) setPage(result.data); else setError(result.message)
+    setLoading(false)
+  }, [search, designationId, gender, status, pageNumber, pageSize, sortBy, sortDir])
+  useEffect(() => { void load() }, [load])
 
-  const columns: TableColumn<Employee>[] = [
-    {
-      key: 'name',
-      header: 'Employee',
-      sortable: true,
-      render: (r) => (
-        <div className="flex items-center gap-2.5">
-          {r.profileImage ? (
-            <img src={r.profileImage} alt={`${r.firstName} ${r.lastName}`} className="h-8 w-8 rounded-full object-cover" />
-          ) : (
-            <span className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white shadow-sm" style={{ backgroundColor: r.avatarColor }}>
-              {initials(`${r.firstName} ${r.lastName}`)}
-            </span>
-          )}
-          <div>
-            <p className="font-medium text-ink-900">{r.firstName} {r.lastName}</p>
-            <p className="text-xs text-ink-500">{r.id}</p>
-          </div>
-        </div>
-      ),
-    },
-    { key: 'email', header: 'Email', sortable: true, render: (r) => <span className="text-ink-600">{r.email}</span> },
-    { key: 'designationId', header: 'Designation', render: (r) => <span className="text-ink-600">{designationName(r.designationId)}</span> },
-    { key: 'phone', header: 'Phone Number', sortable: true, render: (r) => <span className="text-ink-600">{r.phone}</span> },
-    { 
-      key: 'status', 
-      header: 'Status', 
-      sortable: true, 
-      render: (r) => <Badge tone={r.status === 'ACTIVE' ? 'success' : 'neutral'} dot>{r.status === 'ACTIVE' ? 'Active' : 'Inactive'}</Badge> 
-    },
-    { key: 'joinDate', header: 'Joined', sortable: true, render: (r) => <span className="text-ink-600">{formatDate(r.joinDate)}</span>, align: 'right' },
-    {
-      key: 'actions',
-      header: 'Actions',
-      align: 'center',
-      render: (r) => (
-         <div className="flex items-center justify-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-            {hasPrivilege(PRIV.EMPLOYEE_VIEW) && (
-              <button onClick={(e) => { e.stopPropagation(); navigate(ROUTES.EMPLOYEE_DETAIL.replace(':id', r.id)); }} className="rounded p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-700" title="View details">
-                <User className="h-4 w-4" />
-              </button>
-            )}
-             {hasPrivilege(PRIV.EMPLOYEE_UPDATE) && (
-              <button onClick={(e) => { e.stopPropagation(); navigate(ROUTES.EMPLOYEE_EDIT.replace(':id', r.id)); }} className="rounded p-1 text-ink-400 hover:bg-ink-100 hover:text-brand-600" title="Edit employee">
-                <Edit className="h-4 w-4" />
-              </button>
-            )}
-            {hasPrivilege(PRIV.EMPLOYEE_STATUS_CHANGE) && (
-              <button 
-                onClick={async (e) => { 
-                  e.stopPropagation(); 
-                  const newStatus = r.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
-                  const result = await employeeService.updateEmployeeStatus(r.id, newStatus);
-                  if (result.success) {
-                    toast.success(result.message);
-                    reload();
-                  } else {
-                    toast.error(result.message);
-                  }
-                }} 
-                className="rounded p-1 text-ink-400 hover:bg-ink-100 hover:text-amber-600" title="Toggle status"
-              >
-                <UserCog className="h-4 w-4" />
-              </button>
-            )}
-             {hasPrivilege(PRIV.EMPLOYEE_DELETE) && (
-              <button onClick={async (e) => { 
-                e.stopPropagation(); 
-                const ok = await confirm({
-                  title: 'Delete Employee',
-                  message: `Are you sure you want to delete ${r.firstName} ${r.lastName}? This action cannot be undone.`,
-                  variant: 'danger',
-                  confirmText: 'Delete'
-                });
-                if (ok) {
-                   const result = await employeeService.deleteEmployee(r.id);
-                   if (result.success) {
-                     toast.success(result.message);
-                     reload();
-                   } else {
-                     toast.error(result.message);
-                   }
-                }
-              }} className="rounded p-1 text-ink-400 hover:bg-ink-100 hover:text-signal-critical" title="Delete employee">
-                <Trash2 className="h-4 w-4" />
-              </button>
-            )}
-         </div>
-      ),
-    }
+  const changeStatus = async (employee: EmployeeResponse) => {
+    if (employee.superUser && employee.active) return
+    const next = !employee.active; const accepted = await confirm({ title: `${next ? 'Activate' : 'Deactivate'} Employee`, message: `${next ? 'Activate' : 'Deactivate'} ${employee.fullName}?`, confirmText: next ? 'Activate' : 'Deactivate', variant: next ? 'primary' : 'danger' })
+    if (!accepted) return
+    const result = await employeeService.updateEmployeeStatus(employee.id, next)
+    result.success ? toast.success(result.message) : toast.error(result.message)
+    if (result.success) void load()
+  }
+  const clear = () => { setSearchInput(''); setSearch(''); setDesignationId('All'); setGender('All'); setStatus('All'); setPageNumber(0) }
+  const sort = (key: string) => { const mapping: Record<string, string> = { employeeCode: 'employeeCode', firstName: 'firstName', gender: 'gender', email: 'email', phoneNo: 'phoneNo', joinDate: 'joinDate', designationName: 'designationName', active: 'active' }; const backend = mapping[key]; if (!backend) return; setPageNumber(0); if (sortBy === backend) setSortDir((d) => d === 'asc' ? 'desc' : 'asc'); else { setSortBy(backend); setSortDir('asc') } }
+
+  const columns: TableColumn<EmployeeResponse>[] = [
+    { key: 'firstName', header: 'Employee', sortable: true, render: (r) => <div className="flex items-center gap-2.5">{r.profileImage ? <img src={r.profileImage} alt={r.fullName} className="h-9 w-9 rounded-full object-cover" /> : <span className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold text-white" style={{ backgroundColor: r.avatarColor || '#12507F' }}>{initials(r.fullName)}</span>}<div><div className="flex items-center gap-2"><p className="font-medium text-ink-900">{r.fullName}</p>{r.superUser && <Badge tone="info">Super User</Badge>}</div><p className="text-xs text-ink-400">{r.designationName}</p></div></div> },
+    { key: 'employeeCode', header: 'Employee Code', sortable: true, render: (r) => <span className="font-mono text-xs font-semibold text-brand-600">{r.employeeCode}</span> },
+    { key: 'gender', header: 'Gender', sortable: true, render: (r) => genderLabel(r.gender) },
+    { key: 'email', header: 'Email', sortable: true, render: (r) => r.email }, { key: 'phoneNo', header: 'Phone Number', sortable: true, render: (r) => r.phoneNo },
+    { key: 'joinDate', header: 'Join Date', sortable: true, render: (r) => formatDate(r.joinDate) },
+    { key: 'designationName', header: 'Designation', sortable: true, render: (r) => r.designationName },
+    { key: 'active', header: 'Status', sortable: true, render: (r) => <Badge tone={r.active ? 'success' : 'neutral'} dot>{r.active ? 'Active' : 'Inactive'}</Badge> },
+    { key: 'actions', header: 'Actions', align: 'center', render: (r) => <div className="flex justify-center gap-1" onClick={(e) => e.stopPropagation()}>{hasPrivilege(PRIV.EMPLOYEE_VIEW) && <button title="View employee" aria-label={`View ${r.fullName}`} onClick={() => navigate(ROUTES.EMPLOYEE_DETAIL.replace(':id', String(r.id)))} className="rounded p-1.5 text-ink-400 hover:bg-ink-100"><Eye className="h-4 w-4" /></button>}{hasPrivilege(PRIV.EMPLOYEE_UPDATE) && <button title="Edit employee" aria-label={`Edit ${r.fullName}`} onClick={() => navigate(ROUTES.EMPLOYEE_EDIT.replace(':id', String(r.id)))} className="rounded p-1.5 text-ink-400 hover:bg-brand-50 hover:text-brand-600"><Edit className="h-4 w-4" /></button>}{hasPrivilege(PRIV.EMPLOYEE_STATUS_CHANGE) && <button disabled={r.superUser && r.active} title={r.superUser && r.active ? 'The Super User cannot be deactivated' : r.active ? 'Deactivate employee' : 'Activate employee'} aria-label={r.active ? `Deactivate ${r.fullName}` : `Activate ${r.fullName}`} onClick={() => void changeStatus(r)} className="rounded p-1.5 text-ink-400 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-35">{r.active ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}</button>}</div> },
   ]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title="Employees"
-        description="Manage system employees, their roles, and privileges."
-        actions={
-          hasPrivilege(PRIV.EMPLOYEE_CREATE) ? (
-            <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => navigate(ROUTES.EMPLOYEE_CREATE)}>
-              Add Employee
-            </Button>
-          ) : undefined
-        }
-      />
-
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-1 items-center gap-3">
-          <Search value={search} onChange={setSearch} placeholder="Search by name, email, or phone..." />
-        </div>
-      </div>
-
-      <div className="group rounded-lg border border-ink-100 bg-white shadow-panel">
-        <Table
-          columns={columns}
-          rows={page?.content ?? []}
-          rowKey={(r) => r.id}
-          isLoading={isLoading}
-          error={error}
-          onRetry={reload}
-          sortBy={sortBy}
-          sortDir={sortDir}
-          onSort={(key) => {
-            if (key === 'actions') return;
-            if (sortBy === key) setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
-            else {
-              setSortBy(key)
-              setSortDir('asc')
-            }
-          }}
-          onRowClick={hasPrivilege(PRIV.EMPLOYEE_VIEW) ? ((r) => navigate(ROUTES.EMPLOYEE_DETAIL.replace(':id', r.id))) : undefined}
-          emptyTitle="No employees found"
-          emptyDescription="Try adjusting your search or filters."
-        />
-        <Pagination page={page} onPageChange={setPageNumber} onPageSizeChange={setPageSize} />
-      </div>
-    </div>
-  )
+  return <div className="flex flex-col gap-6"><PageHeader title="Employees" description="Manage employee profiles and account access." actions={hasPrivilege(PRIV.EMPLOYEE_CREATE) ? <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => navigate(ROUTES.EMPLOYEE_CREATE)}>Create Employee</Button> : undefined} />
+    <div className="flex flex-wrap items-center gap-2"><div className="min-w-72 flex-1"><Search value={searchInput} onChange={setSearchInput} placeholder="Search code, name, email, phone, or designation..." /></div><Filter label="Designation" value={designationId} options={designationOptions} onChange={(v) => { setDesignationId(v); setPageNumber(0) }} /><Filter label="Gender" value={gender} options={[{ label: 'Male', value: 'MALE' }, { label: 'Female', value: 'FEMALE' }, { label: 'Other', value: 'OTHER' }]} onChange={(v) => { setGender(v); setPageNumber(0) }} /><Filter label="Status" value={status} options={[{ label: 'Active', value: 'ACTIVE' }, { label: 'Inactive', value: 'INACTIVE' }]} onChange={(v) => { setStatus(v); setPageNumber(0) }} /><Button variant="filterClear" size="sm" leftIcon={<RotateCcw className="h-4 w-4" />} onClick={clear}>Clear Filters</Button></div>
+    <div className="overflow-x-auto rounded-lg border border-ink-100 bg-white shadow-panel"><Table columns={columns} rows={page?.content ?? []} rowKey={(r) => String(r.id)} isLoading={loading} error={error} onRetry={load} sortBy={sortBy} sortDir={sortDir} onSort={sort} onRowClick={hasPrivilege(PRIV.EMPLOYEE_VIEW) ? (r) => navigate(ROUTES.EMPLOYEE_DETAIL.replace(':id', String(r.id))) : undefined} emptyTitle="No employees found" emptyDescription="Try adjusting your search or filters." /><Pagination page={page} onPageChange={setPageNumber} onPageSizeChange={(size) => { setPageSize(size); setPageNumber(0) }} /></div>
+  </div>
 }

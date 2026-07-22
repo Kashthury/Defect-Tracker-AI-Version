@@ -5,7 +5,7 @@ import { mockEmployeeRecords } from '@/mock/employees'
 import { AllocationResult, ReleaseTestCaseRecord } from '@/types/releaseTestCase'
 import { TestCase } from '@/types/defect'
 import { ApiResponse } from '@/types/common'
-import { mockDelay, ok } from './apiClient'
+import { apiRequest, mockDelay, ok } from './apiClient'
 
 let nextId = mockReleaseTestCases.length + 1
 
@@ -72,23 +72,10 @@ export const releaseTestCaseService = {
   },
 
   async allocate(projectId: string, releaseIds: string[], testCaseIds: string[]): Promise<ApiResponse<AllocationResult>> {
-    await mockDelay(500)
-    let allocated = 0
-    let skipped = 0
-    for (const releaseId of releaseIds) {
-      for (const testCaseId of testCaseIds) {
-        if (mockReleaseTestCases.some((r) => r.releaseId === releaseId && r.testCaseId === testCaseId && r.active)) {
-          skipped += 1
-          continue
-        }
-        mockReleaseTestCases.push(enrich(projectId, releaseId, testCaseId))
-        allocated += 1
-      }
-    }
-    return ok(
-      { requested: releaseIds.length * testCaseIds.length, allocated, skipped },
-      `${allocated} allocated, ${skipped} already existed and were skipped.`,
-    )
+    return apiRequest(`/projects/${encodeURIComponent(projectId)}/testcase-allocations`, {
+      method: 'POST',
+      body: { releaseIds, testCaseIds },
+    })
   },
 
   async assignQa(ids: string[], employeeId: string): Promise<ApiResponse<null>> {

@@ -4,11 +4,36 @@ import { mockEmployeeRecords } from '@/mock/employees'
 import { mockRoles } from '@/mock/roles'
 import { ApiResponse } from '@/types/common'
 import { AssignedProjectMember, ModuleRecord, SubmoduleRecord } from '@/types/moduleManagement'
-import { fail, mockDelay, ok } from './apiClient'
+import { apiRequest, fail, mockDelay, ok } from './apiClient'
+import { employeeService } from './employeeService'
 
 let nextModule = 20
 let nextSubmodule = 40
 const tidy = (value: string) => value.trim().replace(/\s+/g, ' ')
+
+const mapModule = (projectId: string, item: ModuleRecord): ModuleRecord => ({
+  ...item,
+  id: String(item.id),
+  projectId: String(item.projectId ?? projectId),
+  description: item.description ?? '',
+  active: item.active !== false,
+  qaEmployeeIds: item.qaEmployeeIds ?? [],
+  submoduleCount: item.submoduleCount ?? 0,
+  testCaseCount: item.testCaseCount ?? 0,
+  defectCount: item.defectCount ?? 0,
+})
+
+const mapSubmodule = (projectId: string, item: SubmoduleRecord): SubmoduleRecord => ({
+  ...item,
+  id: String(item.id),
+  projectId: String(item.projectId ?? projectId),
+  moduleId: String(item.moduleId),
+  description: item.description ?? '',
+  active: item.active !== false,
+  developerEmployeeIds: item.developerEmployeeIds ?? [],
+  testCaseCount: item.testCaseCount ?? 0,
+  defectCount: item.defectCount ?? 0,
+})
 
 function availableMembers(projectId: string, roleTypes: string[]): AssignedProjectMember[] {
   const today = new Date().toISOString().slice(0, 10)
@@ -33,73 +58,89 @@ function availableMembers(projectId: string, roleTypes: string[]): AssignedProje
 
 export const moduleManagementService = {
   async getModules(projectId: string): Promise<ApiResponse<ModuleRecord[]>> {
-    await mockDelay()
-    return ok(mockModules.filter((m) => m.projectId === projectId).map((m) => ({ ...m })))
+    const response = await apiRequest<ModuleRecord[] | { content?: ModuleRecord[] }>(
+      `/projects/${encodeURIComponent(projectId)}/modules`,
+    )
+    if (!response.success) return fail(response.message)
+    const rows = Array.isArray(response.data) ? response.data : response.data.content ?? []
+    return ok(rows.map((item) => mapModule(projectId, item)).filter((item) => item.active !== false), response.message)
   },
   async createModule(projectId: string, payload: Pick<ModuleRecord, 'name' | 'description'>): Promise<ApiResponse<ModuleRecord>> {
-    await mockDelay()
     const name = tidy(payload.name)
     if (!name) return fail('Module Name is required.')
-    if (mockModules.some((m) => m.projectId === projectId && m.name.toLowerCase() === name.toLowerCase())) return fail('Module Name must be unique within the selected project.')
-    const item: ModuleRecord = { id: `mod-${nextModule++}`, projectId, name, description: tidy(payload.description), qaEmployeeIds: [], submoduleCount: 0, testCaseCount: 0, defectCount: 0 }
-    mockModules.push(item)
-    return ok({ ...item }, 'Module created successfully.')
+    return apiRequest(`/projects/${encodeURIComponent(projectId)}/modules`, {
+      method: 'POST',
+      body: { name, description: tidy(payload.description), active: true },
+    })
   },
-  async updateModule(id: string, payload: Pick<ModuleRecord, 'name' | 'description'>): Promise<ApiResponse<ModuleRecord>> {
-    await mockDelay()
-    const item = mockModules.find((m) => m.id === id)
-    if (!item) return fail('Module not found.')
+  async updateModule(projectId: string, id: string, payload: Pick<ModuleRecord, 'name' | 'description'>): Promise<ApiResponse<ModuleRecord>> {
     const name = tidy(payload.name)
     if (!name) return fail('Module Name is required.')
-    if (mockModules.some((m) => m.projectId === item.projectId && m.id !== id && m.name.toLowerCase() === name.toLowerCase())) return fail('Module Name must be unique within the selected project.')
-    item.name = name; item.description = tidy(payload.description)
-    return ok({ ...item }, 'Module updated successfully.')
+    return apiRequest(`/projects/${encodeURIComponent(projectId)}/modules/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: { name, description: tidy(payload.description), active: true },
+    })
   },
-  async deleteModule(id: string): Promise<ApiResponse<null>> {
-    await mockDelay()
-    const index = mockModules.findIndex((m) => m.id === id)
-    if (index < 0) return fail('Module not found.')
-    const item = mockModules[index]
-    if (mockSubmodules.some((s) => s.moduleId === id) || item.testCaseCount > 0 || item.defectCount > 0) return fail('This module has submodules, test cases, or defects and cannot be deleted.')
-    mockModules.splice(index, 1)
-    return ok(null, 'Module deleted successfully.')
+  async deleteModule(projectId: string, item: ModuleRecord): Promise<ApiResponse<ModuleRecord>> {
+    return apiRequest(`/projects/${encodeURIComponent(projectId)}/modules/${encodeURIComponent(item.id)}`, {
+      method: 'PUT',
+      body: { name: item.name, description: item.description, active: false },
+    })
   },
   async getSubmodules(projectId: string, moduleId: string): Promise<ApiResponse<SubmoduleRecord[]>> {
-    await mockDelay()
-    return ok(mockSubmodules.filter((s) => s.projectId === projectId && s.moduleId === moduleId).map((s) => ({ ...s })))
+    const response = await apiRequest<SubmoduleRecord[] | { content?: SubmoduleRecord[] }>(
+      `/projects/${encodeURIComponent(projectId)}/submodules`,
+      { query: { moduleId } },
+    )
+    if (!response.success) return fail(response.message)
+    const rows = Array.isArray(response.data) ? response.data : response.data.content ?? []
+    return ok(
+      rows
+        .map((item) => mapSubmodule(projectId, item))
+        .filter((item) => item.active !== false && String(item.moduleId) === String(moduleId)),
+      response.message,
+    )
   },
   async createSubmodule(projectId: string, moduleId: string, payload: Pick<SubmoduleRecord, 'name' | 'description'>): Promise<ApiResponse<SubmoduleRecord>> {
-    await mockDelay()
     const name = tidy(payload.name)
     if (!name) return fail('Submodule Name is required.')
-    if (mockSubmodules.some((s) => s.moduleId === moduleId && s.name.toLowerCase() === name.toLowerCase())) return fail('Submodule Name must be unique within the selected module.')
-    const item: SubmoduleRecord = { id: `sub-${nextSubmodule++}`, projectId, moduleId, name, description: tidy(payload.description), developerEmployeeIds: [], testCaseCount: 0, defectCount: 0 }
-    mockSubmodules.push(item)
-    const module = mockModules.find((m) => m.id === moduleId); if (module) module.submoduleCount += 1
-    return ok({ ...item }, 'Submodule created successfully.')
+    return apiRequest(`/projects/${encodeURIComponent(projectId)}/submodules`, {
+      method: 'POST',
+      body: { moduleId, name, description: tidy(payload.description), active: true },
+    })
   },
-  async updateSubmodule(id: string, payload: Pick<SubmoduleRecord, 'name' | 'description'>): Promise<ApiResponse<SubmoduleRecord>> {
-    await mockDelay()
-    const item = mockSubmodules.find((s) => s.id === id)
-    if (!item) return fail('Submodule not found.')
+  async updateSubmodule(projectId: string, item: SubmoduleRecord, payload: Pick<SubmoduleRecord, 'name' | 'description'>): Promise<ApiResponse<SubmoduleRecord>> {
     const name = tidy(payload.name)
     if (!name) return fail('Submodule Name is required.')
-    if (mockSubmodules.some((s) => s.moduleId === item.moduleId && s.id !== id && s.name.toLowerCase() === name.toLowerCase())) return fail('Submodule Name must be unique within the selected module.')
-    item.name = name; item.description = tidy(payload.description)
-    return ok({ ...item }, 'Submodule updated successfully.')
+    return apiRequest(`/projects/${encodeURIComponent(projectId)}/submodules/${encodeURIComponent(item.id)}`, {
+      method: 'PUT',
+      body: { moduleId: item.moduleId, name, description: tidy(payload.description), active: true },
+    })
   },
-  async deleteSubmodule(id: string): Promise<ApiResponse<null>> {
-    await mockDelay()
-    const index = mockSubmodules.findIndex((s) => s.id === id)
-    if (index < 0) return fail('Submodule not found.')
-    const item = mockSubmodules[index]
-    if (item.testCaseCount > 0 || item.defectCount > 0) return fail('This submodule contains test cases or defects and cannot be deleted.')
-    mockSubmodules.splice(index, 1)
-    const module = mockModules.find((m) => m.id === item.moduleId); if (module) module.submoduleCount = Math.max(0, module.submoduleCount - 1)
-    return ok(null, 'Submodule deleted successfully.')
+  async deleteSubmodule(projectId: string, item: SubmoduleRecord): Promise<ApiResponse<SubmoduleRecord>> {
+    return apiRequest(`/projects/${encodeURIComponent(projectId)}/submodules/${encodeURIComponent(item.id)}`, {
+      method: 'PUT',
+      body: { moduleId: item.moduleId, name: item.name, description: item.description, active: false },
+    })
   },
-  async getAvailableQa(projectId: string) { await mockDelay(); return ok(availableMembers(projectId, ['QA', 'QA_LEAD'])) },
-  async getAvailableDevelopers(projectId: string) { await mockDelay(); return ok(availableMembers(projectId, ['DEVELOPER'])) },
+  async getAvailableQa(projectId: string): Promise<ApiResponse<AssignedProjectMember[]>> {
+    const response = await employeeService.getProjectQaEmployees(projectId)
+    if (!response.success) return fail(response.message)
+    return ok(response.data.map((employee) => ({ employeeId: String(employee.id), employeeName: employee.fullName, roleName: employee.designationName || 'QA', roleType: 'QA', allocationPercentage: 0, startDate: '', endDate: '' })), response.message)
+  },
+  async getAvailableDevelopers(projectId: string): Promise<ApiResponse<AssignedProjectMember[]>> {
+    const response = await employeeService.getProjectDevelopers(projectId)
+    if (!response.success) return fail(response.message)
+    return ok(response.data.map((developer) => ({
+      employeeId: String(developer.id),
+      employeeName: developer.fullName,
+      roleName: developer.designationName || 'Developer',
+      roleType: 'DEVELOPER',
+      allocationPercentage: 0,
+      startDate: '',
+      endDate: '',
+    })), response.message)
+  },
   async assignQa(moduleId: string, employeeIds: string[]) { await mockDelay(); const item = mockModules.find((m) => m.id === moduleId); if (!item) return fail<ModuleRecord>('Module not found.'); item.qaEmployeeIds = [...new Set(employeeIds)]; return ok({ ...item }, 'Module QA members updated successfully.') },
   async assignDevelopers(submoduleId: string, employeeIds: string[]) { await mockDelay(); const item = mockSubmodules.find((s) => s.id === submoduleId); if (!item) return fail<SubmoduleRecord>('Submodule not found.'); item.developerEmployeeIds = [...new Set(employeeIds)]; return ok({ ...item }, 'Submodule developers updated successfully.') },
 }

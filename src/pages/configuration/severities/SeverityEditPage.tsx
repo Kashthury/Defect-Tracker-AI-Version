@@ -31,7 +31,13 @@ export const SeverityEditPage: React.FC = () => {
     requireDirtyToSubmit: true,
     schema: {
       name: { required: true, label: 'Severity Name' },
-      weight: { required: true, label: 'Weight' },
+      weight: {
+        required: true,
+        label: 'Weight',
+        validate: (value) => Number.isFinite(value) && value >= 1
+          ? undefined
+          : 'Weight must be a number greater than or equal to 1.',
+      },
     },
   })
 

@@ -3,10 +3,40 @@ import { TestCaseImportRow, TestCaseImportValidation, TestCasePayload, TestCaseR
 import { mockTestCases } from '@/mock/testCases'
 import { mockModules, mockSubmodules } from '@/mock/moduleManagement'
 import { mockDefectTypes, mockSeverities } from '@/mock/configuration'
-import { fail, mockDelay, ok, paginate } from './apiClient'
+import { apiRequest, fail, mockDelay, ok, paginate } from './apiClient'
+import { getConfigurationPage } from './configurationApi'
 import { allocateProjectSequence } from './projectSequenceService'
 
 const tidy = (value: string) => value.trim().replace(/\s+/g, ' ')
+const SORTABLE_FIELDS = new Set(['testCaseNo', 'description', 'createdAt', 'updatedAt', 'executionStatus'])
+
+const endpoint = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/testcases`
+
+type BackendTestCase = Partial<TestCaseRecord> & {
+  subModuleId?: string | number
+  subModuleName?: string
+}
+
+const mapTestCase = (projectId: string, item: BackendTestCase): TestCaseRecord => ({
+  id: String(item.id ?? ''),
+  testCaseNo: String(item.testCaseNo ?? ''),
+  projectId: String(item.projectId ?? projectId),
+  moduleId: String(item.moduleId ?? ''),
+  moduleName: String(item.moduleName ?? ''),
+  submoduleId: String(item.submoduleId ?? item.subModuleId ?? ''),
+  submoduleName: String(item.submoduleName ?? item.subModuleName ?? ''),
+  defectTypeId: String(item.defectTypeId ?? ''),
+  defectTypeName: String(item.defectTypeName ?? ''),
+  severityId: String(item.severityId ?? ''),
+  severityName: String(item.severityName ?? ''),
+  severityColor: String(item.severityColor ?? '#64748B'),
+  description: String(item.description ?? ''),
+  steps: String(item.steps ?? ''),
+  createdAt: String(item.createdAt ?? ''),
+  updatedAt: String(item.updatedAt ?? ''),
+  allocatedReleaseCount: Number(item.allocatedReleaseCount ?? 0),
+  hasExecutionHistory: Boolean(item.hasExecutionHistory),
+})
 
 function hydrate(projectId: string, payload: TestCasePayload, current?: TestCaseRecord): ApiResponse<TestCaseRecord> {
   const module = mockModules.find((item) => item.id === payload.moduleId && item.projectId === projectId)
@@ -51,21 +81,51 @@ function escapeCsv(value: unknown) {
 
 export const testCaseService = {
   async getTestCases(projectId: string, request: PageRequest): Promise<ApiResponse<Page<TestCaseRecord>>> {
-    await mockDelay()
-    const source = mockTestCases.filter((item) => item.projectId === projectId)
-    return ok(paginate(source, request, ['testCaseNo', 'description', 'moduleName', 'submoduleName', 'defectTypeName', 'severityName']))
+    const filters = request.filters ?? {}
+    const sortBy = request.sortBy && SORTABLE_FIELDS.has(request.sortBy)
+      ? request.sortBy
+      : 'createdAt'
+    const response = await getConfigurationPage<BackendTestCase>(endpoint(projectId), {
+      ...request,
+      sortBy,
+      sortDir: request.sortDir ?? 'desc',
+      filters: {
+        moduleId: filters.moduleId,
+        subModuleId: filters.subModuleId ?? filters.submoduleId,
+        defectTypeId: filters.defectTypeId,
+        severityId: filters.severityId,
+        executionStatus: filters.executionStatus,
+        assignedToId: filters.assignedToId,
+        releaseId: filters.releaseId,
+      },
+    })
+    if (!response.success) return fail(response.message)
+    return ok({
+      ...response.data,
+      content: response.data.content.map((item) => mapTestCase(projectId, item)),
+    }, response.message)
   },
   async getTestCaseById(projectId: string, id: string): Promise<ApiResponse<TestCaseRecord>> {
-    await mockDelay()
-    const item = mockTestCases.find((row) => row.projectId === projectId && row.id === id)
-    return item ? ok({ ...item }) : fail('Test case not found.')
+    const response = await apiRequest<BackendTestCase>(`${endpoint(projectId)}/${encodeURIComponent(id)}`)
+    return response.success
+      ? ok(mapTestCase(projectId, response.data), response.message)
+      : fail(response.message)
   },
   async createTestCase(projectId: string, payload: TestCasePayload): Promise<ApiResponse<TestCaseRecord>> {
-    await mockDelay()
-    const response = hydrate(projectId, payload)
-    if (!response.success) return response
-    mockTestCases.unshift(response.data)
-    return ok(response.data, `Test Case ${response.data.testCaseNo} created successfully.`)
+    const response = await apiRequest<BackendTestCase>(endpoint(projectId), {
+      method: 'POST',
+      body: {
+        moduleId: payload.moduleId,
+        subModuleId: payload.submoduleId,
+        defectTypeId: payload.defectTypeId,
+        severityId: payload.severityId,
+        description: tidy(payload.description),
+        steps: payload.steps.trim(),
+      },
+    })
+    return response.success
+      ? ok(mapTestCase(projectId, response.data), response.message)
+      : fail(response.message)
   },
   async updateTestCase(projectId: string, id: string, payload: TestCasePayload): Promise<ApiResponse<TestCaseRecord>> {
     await mockDelay()
@@ -86,16 +146,22 @@ export const testCaseService = {
     return ok(null, 'Test case deleted successfully.')
   },
   async getModuleTestCaseCounts(projectId: string): Promise<ApiResponse<Record<string, number>>> {
-    await mockDelay(180)
+    const response = await this.getTestCases(projectId, { pageNumber: 0, pageSize: 100000 })
+    if (!response.success) return fail(response.message)
     const counts: Record<string, number> = {}
-    mockTestCases.filter((item) => item.projectId === projectId).forEach((item) => { counts[item.moduleId] = (counts[item.moduleId] ?? 0) + 1 })
-    return ok(counts)
+    response.data.content.forEach((item) => { counts[item.moduleId] = (counts[item.moduleId] ?? 0) + 1 })
+    return ok(counts, response.message)
   },
   async getSubmoduleTestCaseCounts(projectId: string, moduleId: string): Promise<ApiResponse<Record<string, number>>> {
-    await mockDelay(180)
+    const response = await this.getTestCases(projectId, {
+      pageNumber: 0,
+      pageSize: 100000,
+      filters: { moduleId },
+    })
+    if (!response.success) return fail(response.message)
     const counts: Record<string, number> = {}
-    mockTestCases.filter((item) => item.projectId === projectId && item.moduleId === moduleId).forEach((item) => { counts[item.submoduleId] = (counts[item.submoduleId] ?? 0) + 1 })
-    return ok(counts)
+    response.data.content.forEach((item) => { counts[item.submoduleId] = (counts[item.submoduleId] ?? 0) + 1 })
+    return ok(counts, response.message)
   },
   async exportTestCases(projectId: string, request: PageRequest): Promise<ApiResponse<string>> {
     await mockDelay(220)

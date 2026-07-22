@@ -3,6 +3,7 @@ import { CONFIRMED_DEFECT_STATUSES } from '@/mock/dashboardConfig'
 import { DASHBOARD_DEFECTS, KLOC_STORE } from '@/mock/dashboardData'
 import { ApiResponse } from '@/types/common'
 import { ProjectQualityDashboardData, UpdateKlocPayload } from '@/types/dashboard'
+import { projectService } from '@/services/projectService'
 import { fail, mockDelay, ok } from '../apiClient'
 import { riskCalculationService } from './riskCalculationService'
 import { getSeverityWeightConfig } from './severityAnalyticsService'
@@ -56,10 +57,11 @@ export const projectDashboardService = {
 
   /** PATCH /api/dashboard/projects/{projectId}/kloc */
   async updateKloc(payload: UpdateKlocPayload): Promise<ApiResponse<ProjectQualityDashboardData>> {
-    await mockDelay()
     if (!Number.isFinite(payload.kloc) || payload.kloc <= 0) {
       return fail('KLOC must be a positive number.')
     }
+    const response = await projectService.updateProjectKloc(payload.projectId, payload.kloc)
+    if (!response.success) return fail(response.message)
     KLOC_STORE.set(payload.projectId, payload.kloc)
     const data = await computeProjectQualityMetrics(payload.projectId)
     if (!data) return fail('Project quality dashboard is unavailable.')

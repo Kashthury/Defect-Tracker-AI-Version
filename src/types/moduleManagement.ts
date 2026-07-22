@@ -3,6 +3,7 @@ export interface ModuleRecord {
   projectId: string
   name: string
   description: string
+  active?: boolean
   qaEmployeeIds: string[]
   submoduleCount: number
   testCaseCount: number
@@ -15,6 +16,7 @@ export interface SubmoduleRecord {
   moduleId: string
   name: string
   description: string
+  active?: boolean
   developerEmployeeIds: string[]
   testCaseCount: number
   defectCount: number

@@ -27,6 +27,7 @@ export interface Project {
   moduleCount: number
   openDefects: number
   currentRelease?: string
+  kloc?: number
   createdAt: string
   updatedAt: string
 }
