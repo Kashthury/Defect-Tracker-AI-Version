@@ -14,44 +14,93 @@ import { useProjectScope } from '@/hooks/useProjectScope'
 import { moduleManagementService } from '@/services/moduleManagementService'
 import { AssignedProjectMember, ModuleRecord, SubmoduleRecord } from '@/types/moduleManagement'
 import { useToast } from '@/context/ToastContext'
+import { useConfirm } from '@/context/ConfirmContext'
 import { notifyModuleReferenceDataChanged } from '@/utils/referenceDataEvents'
 
 interface FormState { name: string; description: string }
 const emptyForm: FormState = { name: '', description: '' }
+interface TeamSaveResult { success: boolean; message?: string }
+const EMPLOYEE_PICKER_BATCH_SIZE = 10
 
 const PersonPicker: React.FC<{
   title: string
   icon: React.ReactNode
   options: AssignedProjectMember[]
   selected: string[]
-  onChange: (ids: string[]) => void
+  onSave: (addedIds: string[], removedIds: string[]) => Promise<TeamSaveResult>
   emptyText: string
-}> = ({ title, icon, options, selected, onChange, emptyText }) => {
+}> = ({ title, icon, options, selected, onSave, emptyText }) => {
   const [query, setQuery] = useState('')
-  const filtered = options.filter((p) => p.employeeName.toLowerCase().includes(query.toLowerCase()))
+  const [draft, setDraft] = useState<string[]>(selected)
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [visibleCount, setVisibleCount] = useState(EMPLOYEE_PICKER_BATCH_SIZE)
+  const selectedKey = [...selected].sort().join(',')
+  useEffect(() => { setDraft(selected); setSaveError('') }, [selectedKey])
+  const allOptions = useMemo(() => {
+    const knownIds = new Set(options.map((person) => person.employeeId))
+    return [...options, ...selected.filter((id) => !knownIds.has(id)).map((id) => ({
+      employeeId: id, employeeName: `Assigned employee #${id}`, roleName: 'Not currently available for assignment',
+      roleType: '', allocationPercentage: 0, startDate: '', endDate: '',
+    }))]
+  }, [options, selectedKey])
+  const filtered = allOptions.filter((person) => person.employeeName.toLowerCase().includes(query.toLowerCase()))
+  const visibleOptions = filtered.slice(0, visibleCount)
+  useEffect(() => { setVisibleCount(EMPLOYEE_PICKER_BATCH_SIZE) }, [query, allOptions.length])
+  const isDirty = [...draft].sort().join(',') !== selectedKey
+  const toggle = (id: string) => { setSaveError(''); setDraft((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]) }
+  const saveTeam = async () => {
+    if (!isDirty || isSaving) return
+    setIsSaving(true); setSaveError('')
+    const addedIds = draft.filter((id) => !selected.includes(id))
+    const removedIds = selected.filter((id) => !draft.includes(id))
+    if (addedIds.length === 0 && removedIds.length === 0) {
+      setIsSaving(false)
+      return
+    }
+    const result = await onSave(addedIds, removedIds)
+    setIsSaving(false)
+    if (!result.success) setSaveError(result.message || 'The team assignment was not saved. Please try again.')
+  }
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm font-semibold text-ink-900">{icon}{title}</div>
+        <div><div className="flex items-center gap-2 text-sm font-semibold text-ink-900">{icon}{title}</div><p className="mt-1 text-xs text-ink-500">{selected.length} currently assigned · {draft.length} selected</p></div>
         <div className="flex gap-1">
-          <Button size="sm" variant="ghost" onClick={() => onChange(options.map((p) => p.employeeId))}>Select All</Button>
-          <Button size="sm" variant="ghost" onClick={() => onChange([])}>Clear All</Button>
+          <Button size="sm" variant="ghost" disabled={isSaving} onClick={() => setDraft(allOptions.map((person) => person.employeeId))}>Select All</Button>
+          <Button size="sm" variant="ghost" disabled={isSaving} onClick={() => setDraft([])}>Clear All</Button>
         </div>
       </div>
       <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search employee..." leftIcon={<SearchIcon className="h-4 w-4" />} />
-      <div className="max-h-52 space-y-2 overflow-y-auto rounded-md border border-ink-100 p-2">
-        {filtered.length === 0 ? <p className="px-2 py-4 text-center text-xs text-ink-500">{emptyText}</p> : filtered.map((person) => {
-          const checked = selected.includes(person.employeeId)
+      <div
+        className="max-h-64 space-y-2 overflow-y-auto rounded-md border border-ink-100 p-2"
+        onScroll={(event) => {
+          const element = event.currentTarget
+          if (element.scrollHeight - element.scrollTop - element.clientHeight < 48 && visibleCount < filtered.length) {
+            setVisibleCount((count) => Math.min(count + EMPLOYEE_PICKER_BATCH_SIZE, filtered.length))
+          }
+        }}
+      >
+        {filtered.length === 0 ? <p className="px-2 py-4 text-center text-xs text-ink-500">{emptyText}</p> : visibleOptions.map((person) => {
+          const checked = draft.includes(person.employeeId)
+          const wasAssigned = selected.includes(person.employeeId)
           return (
             <label key={person.employeeId} className="flex cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-ink-50">
-              <input type="checkbox" className="mt-1" checked={checked} onChange={() => onChange(checked ? selected.filter((id) => id !== person.employeeId) : [...selected, person.employeeId])} />
+              <input type="checkbox" className="mt-1" checked={checked} disabled={isSaving} onChange={() => toggle(person.employeeId)} />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-ink-800">{person.employeeName}</p>
+                <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-medium text-ink-800">{person.employeeName}</p>{wasAssigned && checked && <Badge tone="success">Assigned</Badge>}{!wasAssigned && checked && <Badge tone="info">Will add</Badge>}{wasAssigned && !checked && <Badge tone="medium">Will remove</Badge>}</div>
                 <p className="text-xs text-ink-500">{person.roleName} · {person.allocationPercentage}% · {person.startDate} to {person.endDate}</p>
               </div>
             </label>
           )
         })}
+        {visibleOptions.length < filtered.length && <p className="py-2 text-center text-xs text-ink-400">Scroll to load more employees</p>}
+      </div>
+      {filtered.length > 0 && <p className="text-right text-[11px] text-ink-400">Showing {visibleOptions.length} of {filtered.length} employees</p>}
+      {saveError && <p role="alert" className="text-xs text-signal-critical">{saveError}</p>}
+      <div className="flex items-center justify-between gap-3 border-t border-ink-100 pt-3">
+        <p className="text-xs text-ink-500">{isDirty ? 'Unsaved assignment changes' : 'Assignments are up to date'}</p>
+        <div className="flex gap-2">{isDirty && <Button size="sm" variant="ghost" disabled={isSaving} onClick={() => setDraft(selected)}>Discard</Button>}<Button size="sm" leftIcon={<Save className="h-4 w-4" />} disabled={!isDirty || isSaving} isLoading={isSaving} onClick={saveTeam}>{selected.length ? 'Update Team' : 'Assign Team'}</Button></div>
       </div>
     </div>
   )
@@ -60,6 +109,7 @@ const PersonPicker: React.FC<{
 export const ModulesPage: React.FC = () => {
   const { projectId, isProjectRoute } = useProjectScope()
   const toast = useToast()
+  const confirm = useConfirm()
   const [modules, setModules] = useState<ModuleRecord[]>([])
   const [submodules, setSubmodules] = useState<SubmoduleRecord[]>([])
   const [qaOptions, setQaOptions] = useState<AssignedProjectMember[]>([])
@@ -71,11 +121,13 @@ export const ModulesPage: React.FC = () => {
   const [modal, setModal] = useState<'module-create' | 'module-edit' | 'sub-create' | 'sub-edit' | null>(null)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [error, setError] = useState('')
+  const [deletingModuleId, setDeletingModuleId] = useState('')
+  const [deletingSubmoduleId, setDeletingSubmoduleId] = useState('')
 
   const selectedModule = modules.find((m) => m.id === selectedModuleId)
   const selectedSubmodule = submodules.find((s) => s.id === selectedSubmoduleId)
 
-  const loadModules = async () => {
+  const loadModules = async (preferredModuleId = selectedModuleId) => {
     if (!projectId) return
     setIsLoading(true)
     const [moduleResult, qaResult, devResult] = await Promise.all([
@@ -92,12 +144,12 @@ export const ModulesPage: React.FC = () => {
     setModules(moduleResult.data)
     setQaOptions(qaResult.success ? qaResult.data : [])
     setDeveloperOptions(devResult.success ? devResult.data : [])
-    const next = moduleResult.data.find((m) => m.id === selectedModuleId)?.id ?? moduleResult.data[0]?.id ?? ''
+    const next = moduleResult.data.find((m) => m.id === preferredModuleId)?.id ?? moduleResult.data[0]?.id ?? ''
     setSelectedModuleId(next)
     setIsLoading(false)
   }
 
-  const loadSubmodules = async (moduleId = selectedModuleId) => {
+  const loadSubmodules = async (moduleId = selectedModuleId, preferredSubmoduleId = selectedSubmoduleId) => {
     if (!projectId || !moduleId) {
       setSubmodules([])
       setSelectedSubmoduleId('')
@@ -111,9 +163,9 @@ export const ModulesPage: React.FC = () => {
       return
     }
     setSubmodules(result.data)
-    setSelectedSubmoduleId((current) =>
-      result.data.some((submodule) => submodule.id === current)
-        ? current
+    setSelectedSubmoduleId(
+      result.data.some((submodule) => submodule.id === preferredSubmoduleId)
+        ? preferredSubmoduleId
         : result.data[0]?.id ?? '',
     )
   }
@@ -143,36 +195,90 @@ export const ModulesPage: React.FC = () => {
   }
 
   const deleteModule = async (item: ModuleRecord) => {
-    if (!projectId) return
-    const result = await moduleManagementService.deleteModule(projectId, item)
+    if (!projectId || deletingModuleId || deletingSubmoduleId) return
+    const confirmed = await confirm({
+      title: 'Delete Module',
+      message: `Delete ${item.name}? The backend will validate whether this Module can be deleted.`,
+      confirmText: 'Delete Module',
+      variant: 'danger',
+    })
+    if (!confirmed) return
+    setDeletingModuleId(item.id)
+    const result = await moduleManagementService.deleteModule(projectId, item.id)
+    setDeletingModuleId('')
     if (!result.success) { toast.error(result.message); return }
     toast.success(result.message)
     notifyModuleReferenceDataChanged()
-    await loadModules()
+    setSelectedModuleId('')
+    setSelectedSubmoduleId('')
+    setSubmodules([])
+    await loadModules('')
   }
   const deleteSubmodule = async (item: SubmoduleRecord) => {
-    if (!projectId) return
+    if (!projectId || deletingModuleId || deletingSubmoduleId) return
+    const confirmed = await confirm({
+      title: 'Delete Submodule',
+      message: `Delete ${item.name}? The backend will validate whether this Submodule can be deleted.`,
+      confirmText: 'Delete Submodule',
+      variant: 'danger',
+    })
+    if (!confirmed) return
     const moduleId = item.moduleId
-    const result = await moduleManagementService.deleteSubmodule(projectId, item)
+    setDeletingSubmoduleId(item.id)
+    const result = await moduleManagementService.deleteSubmodule(projectId, item.id)
+    setDeletingSubmoduleId('')
     if (!result.success) { toast.error(result.message); return }
     toast.success(result.message)
     notifyModuleReferenceDataChanged()
+    setSelectedSubmoduleId('')
+    await Promise.all([loadModules(moduleId), loadSubmodules(moduleId, '')])
+  }
+  const saveQa = async (addedIds: string[], removedIds: string[]): Promise<TeamSaveResult> => {
+    if (!projectId || !selectedModule) return { success: false, message: 'Select a Module before updating its QA team.' }
+    const moduleId = selectedModule.id
+    if (addedIds.length > 0) {
+      const added = await moduleManagementService.addQaMembers(projectId, moduleId, addedIds)
+      if (!added.success) {
+        toast.error(added.message)
+        await Promise.all([loadModules(), loadSubmodules(moduleId)])
+        return { success: false, message: added.message }
+      }
+    }
+    if (removedIds.length > 0) {
+      const removed = await moduleManagementService.removeQaMembers(projectId, moduleId, removedIds)
+      if (!removed.success) {
+        toast.error(removed.message)
+        await Promise.all([loadModules(), loadSubmodules(moduleId)])
+        return { success: false, message: removed.message }
+      }
+    }
     await Promise.all([loadModules(), loadSubmodules(moduleId)])
+    toast.success('Module QA team updated successfully.')
+    return { success: true }
   }
-  const saveQa = async (ids: string[]) => {
-    if (!projectId || !selectedModule) return
-    const result = await moduleManagementService.assignQa(projectId, selectedModule, ids)
-    if (!result.success) { toast.error(result.message); return }
-    toast.success(result.message)
-    await Promise.all([loadModules(), loadSubmodules(selectedModule.id)])
-  }
-  const saveDevelopers = async (ids: string[]) => {
-    if (!projectId || !selectedSubmodule) return
+  const saveDevelopers = async (addedIds: string[], removedIds: string[]): Promise<TeamSaveResult> => {
+    if (!projectId || !selectedSubmodule) return { success: false, message: 'Select a Submodule before updating its Developer team.' }
+    const submoduleId = selectedSubmodule.id
     const moduleId = selectedSubmodule.moduleId
-    const result = await moduleManagementService.assignDevelopers(projectId, selectedSubmodule, ids)
-    if (!result.success) { toast.error(result.message); return }
-    toast.success(result.message)
+    if (addedIds.length > 0) {
+      const added = await moduleManagementService.addDevelopers(projectId, submoduleId, addedIds)
+      if (!added.success) {
+        toast.error(added.message)
+        await Promise.all([loadModules(), loadSubmodules(moduleId)])
+        return { success: false, message: added.message }
+      }
+    }
+    if (removedIds.length > 0) {
+      const removed = await moduleManagementService.removeDevelopers(projectId, submoduleId, removedIds)
+      if (!removed.success) {
+        toast.error(removed.message)
+        await Promise.all([loadModules(), loadSubmodules(moduleId)])
+        return { success: false, message: removed.message }
+      }
+    }
     await Promise.all([loadModules(), loadSubmodules(moduleId)])
+    toast.success('Submodule Developer team updated successfully.')
+    return { success: true }
   }
 
   const content = isLoading ? <div className="flex h-64 items-center justify-center"><Loader label="Loading module workspace..." /></div> : (
@@ -194,18 +300,18 @@ export const ModulesPage: React.FC = () => {
           {submodules.length === 0 ? <EmptyState title="No submodules" description="Create a submodule for this module." /> : submodules.map((sub) => (
             <div key={sub.id} className={`rounded-lg border p-3 ${selectedSubmoduleId === sub.id ? 'border-brand-400 bg-brand-50' : 'border-ink-100'}`}>
               <button className="w-full text-left" onClick={() => setSelectedSubmoduleId(sub.id)}><p className="font-medium text-ink-900">{sub.name}</p><p className="mt-1 text-xs text-ink-500">{sub.description}</p><div className="mt-2 flex gap-3 text-xs text-ink-500"><span><Code2 className="mr-1 inline h-3.5 w-3.5" />{sub.developerEmployeeIds.length} Dev</span><span><CheckSquare2 className="mr-1 inline h-3.5 w-3.5" />{sub.testCaseCount}</span><span><Bug className="mr-1 inline h-3.5 w-3.5" />{sub.defectCount}</span></div></button>
-              <div className="mt-2 flex justify-end gap-1"><Button size="sm" variant="ghost" leftIcon={<Edit3 className="h-3.5 w-3.5" />} onClick={() => openForm('sub-edit', sub)}>Edit</Button><Button size="sm" variant="ghost" leftIcon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => deleteSubmodule(sub)}>Delete</Button></div>
+              <div className="mt-2 flex justify-end gap-1"><Button size="sm" variant="ghost" disabled={Boolean(deletingModuleId || deletingSubmoduleId)} leftIcon={<Edit3 className="h-3.5 w-3.5" />} onClick={() => openForm('sub-edit', sub)}>Edit</Button><Button size="sm" variant="ghost" disabled={Boolean(deletingModuleId || deletingSubmoduleId)} isLoading={deletingSubmoduleId === sub.id} leftIcon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => deleteSubmodule(sub)}>Delete</Button></div>
             </div>
           ))}
         </div>}
       </Card>
 
       <div className="space-y-4">
-        <Card title="Module QA Team" subtitle={selectedModule?.name ?? 'Select a module'} actions={selectedModule ? <div className="flex gap-1"><Button size="sm" variant="ghost" leftIcon={<Edit3 className="h-3.5 w-3.5" />} onClick={() => openForm('module-edit', selectedModule)}>Edit</Button><Button size="sm" variant="ghost" leftIcon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => deleteModule(selectedModule)}>Delete</Button></div> : undefined}>
-          {selectedModule ? <PersonPicker title="Assigned QA Members" icon={<Users className="h-4 w-4 text-brand-600" />} options={qaOptions} selected={selectedModule.qaEmployeeIds} onChange={saveQa} emptyText="No active QA or QA Lead is allocated to this project." /> : <EmptyState title="Select a module" description="QA is assigned at module level." />}
+        <Card title="Module QA Team" subtitle={selectedModule?.name ?? 'Select a module'} actions={selectedModule ? <div className="flex gap-1"><Button size="sm" variant="ghost" disabled={Boolean(deletingModuleId || deletingSubmoduleId)} leftIcon={<Edit3 className="h-3.5 w-3.5" />} onClick={() => openForm('module-edit', selectedModule)}>Edit</Button><Button size="sm" variant="ghost" disabled={Boolean(deletingModuleId || deletingSubmoduleId)} isLoading={deletingModuleId === selectedModule.id} leftIcon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => deleteModule(selectedModule)}>Delete</Button></div> : undefined}>
+          {selectedModule ? <PersonPicker title="Assigned QA Members" icon={<Users className="h-4 w-4 text-brand-600" />} options={qaOptions} selected={selectedModule.qaEmployeeIds} onSave={saveQa} emptyText="No active QA or QA Lead is allocated to this project." /> : <EmptyState title="Select a module" description="QA is assigned at module level." />}
         </Card>
         <Card title="Submodule Developers" subtitle={selectedSubmodule?.name ?? 'Select a submodule'}>
-          {selectedSubmodule ? <PersonPicker title="Assigned Developers" icon={<Code2 className="h-4 w-4 text-brand-600" />} options={developerOptions} selected={selectedSubmodule.developerEmployeeIds} onChange={saveDevelopers} emptyText="No active developer is allocated to this project." /> : <EmptyState title="Select a submodule" description="Developers are assigned at submodule level." />}
+          {selectedSubmodule ? <PersonPicker title="Assigned Developers" icon={<Code2 className="h-4 w-4 text-brand-600" />} options={developerOptions} selected={selectedSubmodule.developerEmployeeIds} onSave={saveDevelopers} emptyText="No active developer is allocated to this project." /> : <EmptyState title="Select a submodule" description="Developers are assigned at submodule level." />}
         </Card>
       </div>
     </div>

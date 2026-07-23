@@ -16,7 +16,7 @@ const mapModule = (projectId: string, item: ModuleRecord): ModuleRecord => ({
   projectId: String(item.projectId ?? projectId),
   description: item.description ?? '',
   active: item.active !== false,
-  qaEmployeeIds: item.qaEmployeeIds ?? [],
+  qaEmployeeIds: (item.qaEmployeeIds ?? []).map(String),
   submoduleCount: item.submoduleCount ?? 0,
   testCaseCount: item.testCaseCount ?? 0,
   defectCount: item.defectCount ?? 0,
@@ -29,7 +29,7 @@ const mapSubmodule = (projectId: string, item: SubmoduleRecord): SubmoduleRecord
   moduleId: String(item.moduleId),
   description: item.description ?? '',
   active: item.active !== false,
-  developerEmployeeIds: item.developerEmployeeIds ?? [],
+  developerEmployeeIds: (item.developerEmployeeIds ?? []).map(String),
   testCaseCount: item.testCaseCount ?? 0,
   defectCount: item.defectCount ?? 0,
 })
@@ -80,10 +80,9 @@ export const moduleManagementService = {
       body: { name, description: tidy(payload.description), active: true },
     })
   },
-  async deleteModule(projectId: string, item: ModuleRecord): Promise<ApiResponse<ModuleRecord>> {
-    return apiRequest(`/projects/${encodeURIComponent(projectId)}/modules/${encodeURIComponent(item.id)}`, {
-      method: 'PUT',
-      body: { name: item.name, description: item.description, active: false },
+  deleteModule(projectId: string, moduleId: string): Promise<ApiResponse<null>> {
+    return apiRequest(`/projects/${encodeURIComponent(projectId)}/modules/${encodeURIComponent(moduleId)}`, {
+      method: 'DELETE',
     })
   },
   async getSubmodules(projectId: string, moduleId: string): Promise<ApiResponse<SubmoduleRecord[]>> {
@@ -116,10 +115,9 @@ export const moduleManagementService = {
       body: { moduleId: item.moduleId, name, description: tidy(payload.description), active: true },
     })
   },
-  async deleteSubmodule(projectId: string, item: SubmoduleRecord): Promise<ApiResponse<SubmoduleRecord>> {
-    return apiRequest(`/projects/${encodeURIComponent(projectId)}/submodules/${encodeURIComponent(item.id)}`, {
-      method: 'PUT',
-      body: { moduleId: item.moduleId, name: item.name, description: item.description, active: false },
+  deleteSubmodule(projectId: string, submoduleId: string): Promise<ApiResponse<null>> {
+    return apiRequest(`/projects/${encodeURIComponent(projectId)}/submodules/${encodeURIComponent(submoduleId)}`, {
+      method: 'DELETE',
     })
   },
   async getAvailableQa(projectId: string): Promise<ApiResponse<AssignedProjectMember[]>> {
@@ -140,35 +138,28 @@ export const moduleManagementService = {
       endDate: '',
     })), response.message)
   },
-  async assignQa(projectId: string, item: ModuleRecord, employeeIds: string[]): Promise<ApiResponse<ModuleRecord>> {
-    const response = await apiRequest<ModuleRecord>(
-      `/projects/${encodeURIComponent(projectId)}/modules/${encodeURIComponent(item.id)}`,
-      {
-        method: 'PUT',
-        body: {
-          name: item.name,
-          description: item.description,
-          active: item.active !== false,
-          qaEmployeeIds: [...new Set(employeeIds)],
-        },
-      },
+  addQaMembers(projectId: string, moduleId: string, employeeIds: string[]): Promise<ApiResponse<unknown>> {
+    return apiRequest(
+      `/projects/${encodeURIComponent(projectId)}/modules/${encodeURIComponent(moduleId)}/qa-members`,
+      { method: 'POST', body: { employeeIds: employeeIds.map(Number) } },
     )
-    return response.success ? ok(mapModule(projectId, response.data), response.message) : fail(response.message)
   },
-  async assignDevelopers(projectId: string, item: SubmoduleRecord, employeeIds: string[]): Promise<ApiResponse<SubmoduleRecord>> {
-    const response = await apiRequest<SubmoduleRecord>(
-      `/projects/${encodeURIComponent(projectId)}/submodules/${encodeURIComponent(item.id)}`,
-      {
-        method: 'PUT',
-        body: {
-          moduleId: item.moduleId,
-          name: item.name,
-          description: item.description,
-          active: item.active !== false,
-          developerEmployeeIds: [...new Set(employeeIds)],
-        },
-      },
+  removeQaMembers(projectId: string, moduleId: string, employeeIds: string[]): Promise<ApiResponse<unknown>> {
+    return apiRequest(
+      `/projects/${encodeURIComponent(projectId)}/modules/${encodeURIComponent(moduleId)}/qa-members`,
+      { method: 'DELETE', body: { employeeIds: employeeIds.map(Number) } },
     )
-    return response.success ? ok(mapSubmodule(projectId, response.data), response.message) : fail(response.message)
+  },
+  addDevelopers(projectId: string, submoduleId: string, employeeIds: string[]): Promise<ApiResponse<unknown>> {
+    return apiRequest(
+      `/projects/${encodeURIComponent(projectId)}/submodules/${encodeURIComponent(submoduleId)}/developers`,
+      { method: 'POST', body: { employeeIds: employeeIds.map(Number) } },
+    )
+  },
+  removeDevelopers(projectId: string, submoduleId: string, employeeIds: string[]): Promise<ApiResponse<unknown>> {
+    return apiRequest(
+      `/projects/${encodeURIComponent(projectId)}/submodules/${encodeURIComponent(submoduleId)}/developers`,
+      { method: 'DELETE', body: { employeeIds: employeeIds.map(Number) } },
+    )
   },
 }
