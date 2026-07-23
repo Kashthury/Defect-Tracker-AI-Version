@@ -1,6 +1,3 @@
-import { mockReleaseTypes } from '@/mock/configuration'
-import { mockProjects } from '@/mock/projects'
-import { mockReleases } from '@/mock/releases'
 import { ApiResponse, Page, PageRequest } from '@/types/common'
 import {
   CreateReleasePayload,
@@ -8,205 +5,127 @@ import {
   ReleaseRecord,
   ReleaseStatus,
   RELEASE_STATUSES,
-  UpdateReleasePayload,
 } from '@/types/release'
-import { apiRequest, fail, mockDelay, ok } from './apiClient'
-import { getConfigurationPage } from './configurationApi'
+import { apiRequest, fail, ok } from './apiClient'
 
-let nextReleaseId = mockReleases.length + 1
+type Json = Record<string, any>
+type BackendPage = {
+  content?: Json[]
+  items?: Json[]
+  pageNumber?: number
+  pageSize?: number
+  number?: number
+  size?: number
+  totalElements?: number
+  totalItems?: number
+  totalPages?: number
+}
 
 const normalizeText = (value: string) => value.trim().replace(/\s+/g, ' ')
 const isReleaseStatus = (value: string): value is ReleaseStatus =>
   RELEASE_STATUSES.includes(value as ReleaseStatus)
+const stringValue = (...values: unknown[]) =>
+  String(values.find((value) => value !== undefined && value !== null) ?? '')
 
-const syncCurrentRelease = (projectId: string) => {
-  const project = mockProjects.find((item) => item.id === projectId)
-  if (!project) return
-  project.currentRelease = mockReleases.find(
-    (release) => release.projectId === projectId && release.status === 'ACTIVE',
-  )?.name
-  project.updatedAt = new Date().toISOString()
-}
+const mapRelease = (source: Json, projectId: string): ReleaseRecord => ({
+  id: stringValue(source.id, source.releaseId),
+  projectId: stringValue(source.projectId, projectId),
+  name: stringValue(source.name, source.releaseName),
+  version: stringValue(source.version),
+  releaseTypeId: stringValue(source.releaseTypeId, source.releaseType?.id),
+  releaseTypeName: stringValue(source.releaseTypeName, source.releaseType?.name),
+  description: stringValue(source.description),
+  releaseDate: stringValue(source.releaseDate),
+  status: isReleaseStatus(String(source.status).toUpperCase()) ? String(source.status).toUpperCase() as ReleaseStatus : 'ON_HOLD',
+  createdAt: stringValue(source.createdAt),
+  updatedAt: stringValue(source.updatedAt, source.createdAt),
+})
 
-const validateRelease = (
-  projectId: string,
-  payload: CreateReleasePayload,
-  excludeReleaseId?: string,
-): string | null => {
-  const project = mockProjects.find((item) => item.id === projectId)
-  if (!project) return 'Project not found.'
-  if (project.status !== 'ACTIVE') return 'Releases cannot be changed for an inactive project.'
-
-  const name = normalizeText(payload.name)
-  const version = normalizeText(payload.version)
-  if (!name) return 'Release Name is required.'
-  if (!version) return 'Version is required.'
-  if (!payload.releaseTypeId) return 'Release Type is required.'
-  if (!payload.releaseDate) return 'Release Date is required.'
-  if (!isReleaseStatus(payload.status)) return 'Select a valid Release Status.'
-  if (payload.releaseDate < project.startDate || payload.releaseDate > project.endDate) {
-    return 'Release Date must be within the project period.'
-  }
-
-  const releaseType = mockReleaseTypes.find(
-    (item) => item.id === payload.releaseTypeId && item.active,
-  )
-  if (!releaseType) return 'Select an active Release Type.'
-
-  if (
-    mockReleases.some(
-      (item) =>
-        item.projectId === projectId &&
-        item.id !== excludeReleaseId &&
-        item.name.toLowerCase() === name.toLowerCase(),
-    )
-  ) {
-    return 'A release with this name already exists in the selected project.'
-  }
-  if (
-    mockReleases.some(
-      (item) =>
-        item.projectId === projectId &&
-        item.id !== excludeReleaseId &&
-        item.version.toLowerCase() === version.toLowerCase(),
-    )
-  ) {
-    return 'A release with this version already exists in the selected project.'
-  }
-  if (
-    payload.status === 'ACTIVE' &&
-    mockReleases.some(
-      (item) =>
-        item.projectId === projectId && item.id !== excludeReleaseId && item.status === 'ACTIVE',
-    )
-  ) {
-    return 'This project already has an ACTIVE release. Put it ON_HOLD or mark it COMPLETED before activating another release.'
-  }
-
-  return null
-}
+const pageQuery = (request: PageRequest) => ({
+  pageNumber: request.pageNumber,
+  pageSize: request.pageSize,
+  search: request.search?.trim() || undefined,
+  sortBy: request.sortBy,
+  sortDir: request.sortDir,
+  status: request.filters?.status === 'All' ? undefined : request.filters?.status,
+  releaseTypeId: request.filters?.releaseTypeId === 'All' ? undefined : request.filters?.releaseTypeId,
+})
 
 export const releaseService = {
   async getReleases(request: PageRequest): Promise<ApiResponse<Page<ReleaseRecord>>> {
-    const projectId = String(request.filters?.projectId ?? '')
-    if (!projectId) return fail('Project is required to load releases.')
-    const { projectId: _projectId, ...filters } = request.filters ?? {}
-    void _projectId
-    return getConfigurationPage(`/projects/${encodeURIComponent(projectId)}/releases`, {
-      ...request,
-      filters,
-    })
+    const projectId = stringValue(request.filters?.projectId)
+    if (!projectId) return fail('Project is required to load Releases.')
+    const response = await apiRequest<BackendPage | Json[]>(
+      `/projects/${encodeURIComponent(projectId)}/releases`,
+      { query: pageQuery(request) },
+    )
+    if (!response.success) return fail(response.message)
+    const source = response.data
+    const allRows = Array.isArray(source) ? source : source.content ?? source.items ?? []
+    const pageSize = Array.isArray(source) ? request.pageSize : source.pageSize ?? source.size ?? request.pageSize
+    const totalElements = Array.isArray(source) ? allRows.length : source.totalElements ?? source.totalItems ?? allRows.length
+    const pageNumber = Array.isArray(source) ? request.pageNumber : source.pageNumber ?? source.number ?? request.pageNumber
+    const rows = Array.isArray(source)
+      ? allRows.slice(pageNumber * pageSize, pageNumber * pageSize + pageSize)
+      : allRows
+    return ok({
+      content: rows.map((row) => mapRelease(row, projectId)),
+      pageNumber,
+      pageSize,
+      totalElements,
+      totalPages: Array.isArray(source)
+        ? Math.max(1, Math.ceil(totalElements / pageSize))
+        : source.totalPages ?? Math.max(1, Math.ceil(totalElements / pageSize)),
+    }, response.message)
   },
 
-  async getReleaseById(
-    projectId: string,
-    releaseId: string,
-  ): Promise<ApiResponse<ReleaseRecord>> {
+  async getReleaseById(projectId: string, releaseId: string): Promise<ApiResponse<ReleaseRecord>> {
     const response = await this.getReleases({
       pageNumber: 0,
       pageSize: 1000,
       filters: { projectId },
     })
     if (!response.success) return fail(response.message)
-    const release = response.data.content.find((item) => String(item.id) === String(releaseId))
+    const release = response.data.content.find((item) => item.id === String(releaseId))
     return release ? ok(release, response.message) : fail('Release not found.')
   },
 
-  async createRelease(
-    projectId: string,
-    payload: CreateReleasePayload,
-  ): Promise<ApiResponse<ReleaseRecord>> {
-    return apiRequest(`/projects/${encodeURIComponent(projectId)}/releases`, {
+  async createRelease(projectId: string, payload: CreateReleasePayload): Promise<ApiResponse<ReleaseRecord>> {
+    const response = await apiRequest<Json>(`/projects/${encodeURIComponent(projectId)}/releases`, {
       method: 'POST',
       body: {
-        ...payload,
         name: normalizeText(payload.name),
         version: normalizeText(payload.version),
+        releaseTypeId: payload.releaseTypeId,
         description: payload.description.trim(),
+        releaseDate: payload.releaseDate,
+        status: 'ON_HOLD',
       },
     })
+    if (!response.success) return fail(response.message)
+    if (response.data && typeof response.data === 'object') {
+      return ok(mapRelease(response.data, projectId), response.message)
+    }
+    const refreshed = await this.getReleases({ pageNumber: 0, pageSize: 1000, filters: { projectId } })
+    if (!refreshed.success) return fail(refreshed.message)
+    const created = refreshed.data.content.find((release) =>
+      release.name.toLowerCase() === normalizeText(payload.name).toLowerCase() &&
+      release.version.toLowerCase() === normalizeText(payload.version).toLowerCase())
+    return created ? ok(created, response.message) : fail('Release was created, but its details could not be reloaded.')
   },
 
-  async updateRelease(
-    projectId: string,
-    releaseId: string,
-    payload: UpdateReleasePayload,
-  ): Promise<ApiResponse<ReleaseRecord>> {
-    await mockDelay(500)
-    const index = mockReleases.findIndex(
-      (item) => item.id === releaseId && item.projectId === projectId,
-    )
-    if (index === -1) return fail('Release not found.')
-    if (mockReleases[index].status === 'COMPLETED') {
-      return fail('A COMPLETED release is historical and cannot be updated.')
-    }
-
-    const validationError = validateRelease(projectId, payload, releaseId)
-    if (validationError) return fail(validationError)
-    const releaseType = mockReleaseTypes.find((item) => item.id === payload.releaseTypeId)!
-    const updated: ReleaseRecord = {
-      ...mockReleases[index],
-      name: normalizeText(payload.name),
-      version: normalizeText(payload.version),
-      releaseTypeId: payload.releaseTypeId,
-      releaseTypeName: releaseType.name,
-      description: payload.description.trim(),
-      releaseDate: payload.releaseDate,
-      status: payload.status,
-      updatedAt: new Date().toISOString(),
-    }
-    mockReleases[index] = updated
-    syncCurrentRelease(projectId)
-    return ok({ ...updated }, 'Release updated successfully.')
-  },
-
-  async updateReleaseStatus(
-    projectId: string,
-    releaseId: string,
-    status: ReleaseStatus,
-  ): Promise<ApiResponse<ReleaseRecord>> {
-    await mockDelay(400)
-    const index = mockReleases.findIndex(
-      (item) => item.id === releaseId && item.projectId === projectId,
-    )
-    if (index === -1) return fail('Release not found.')
+  async updateReleaseStatus(projectId: string, releaseId: string, status: ReleaseStatus): Promise<ApiResponse<ReleaseRecord>> {
     if (!isReleaseStatus(status)) return fail('Select a valid Release Status.')
-
-    const current = mockReleases[index]
-    const project = mockProjects.find((item) => item.id === projectId)
-    if (project?.status !== 'ACTIVE') return fail('Release status cannot be changed for an inactive project.')
-    if (current.status === 'COMPLETED' && status !== 'COMPLETED') {
-      return fail('A COMPLETED release cannot be reopened.')
-    }
-    if (
-      status === 'ACTIVE' &&
-      mockReleases.some(
-        (item) => item.projectId === projectId && item.id !== releaseId && item.status === 'ACTIVE',
-      )
-    ) {
-      return fail('This project already has an ACTIVE release.')
-    }
-
-    const updated = { ...current, status, updatedAt: new Date().toISOString() }
-    mockReleases[index] = updated
-    syncCurrentRelease(projectId)
-    return ok({ ...updated }, `Release status changed to ${status.replace('_', ' ')}.`)
-  },
-
-  async deleteRelease(projectId: string, releaseId: string): Promise<ApiResponse<null>> {
-    await mockDelay(400)
-    const project = mockProjects.find((item) => item.id === projectId)
-    if (project?.status !== 'ACTIVE') return fail('Releases cannot be deleted from an inactive project.')
-    const index = mockReleases.findIndex(
-      (item) => item.id === releaseId && item.projectId === projectId,
+    const response = await apiRequest<Json>(
+      `/projects/${encodeURIComponent(projectId)}/releases/${encodeURIComponent(releaseId)}/status`,
+      { method: 'PATCH', body: { status } },
     )
-    if (index === -1) return fail('Release not found.')
-    if (mockReleases[index].status !== 'ON_HOLD') {
-      return fail('Only an ON_HOLD release can be deleted. ACTIVE and COMPLETED releases must be retained.')
+    if (!response.success) return fail(response.message)
+    if (response.data && typeof response.data === 'object') {
+      return ok(mapRelease(response.data, projectId), response.message)
     }
-    mockReleases.splice(index, 1)
-    syncCurrentRelease(projectId)
-    return ok(null, 'Release deleted successfully.')
+    const refreshed = await this.getReleaseById(projectId, releaseId)
+    return refreshed.success ? ok(refreshed.data, response.message) : fail(refreshed.message)
   },
 
   async getReleaseOverview(projectId: string): Promise<ApiResponse<ReleaseOverview>> {
@@ -223,6 +142,6 @@ export const releaseService = {
       completedCount: releases.filter((item) => item.status === 'COMPLETED').length,
       activeRelease: releases.find((item) => item.status === 'ACTIVE') ?? null,
       nextRelease: upcoming ?? null,
-    })
+    }, response.message)
   },
 }

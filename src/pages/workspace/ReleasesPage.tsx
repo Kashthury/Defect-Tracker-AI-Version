@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { CalendarDays, Edit, ExternalLink, Eye, Plus, Trash2, X } from 'lucide-react'
+import { AlertTriangle, CalendarDays, ExternalLink, Eye, PlayCircle, Plus, X } from 'lucide-react'
 import { Badge } from '@/components/common/Badge'
 import { Button } from '@/components/common/Button'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -40,8 +40,9 @@ export const ReleasesPage: React.FC = () => {
   const { hasPrivilege } = useAuth()
   const { projectId, isProjectRoute } = useProjectScope()
   const { selectedProject } = useProject()
-  const { selectedRelease, setSelectedRelease, clearSelectedRelease } = useRelease()
+  const { selectedRelease, setSelectedRelease, clearSelectedRelease, refreshReleases } = useRelease()
   const [status, setStatus] = useState('All')
+  const [actionError, setActionError] = useState<string | null>(null)
   const [releaseTypeId, setReleaseTypeId] = useState('All')
   const [releaseTypeOptions, setReleaseTypeOptions] = useState<{ label: string; value: string }[]>([])
   const canManageReleases = Boolean(
@@ -100,11 +101,6 @@ export const ReleasesPage: React.FC = () => {
     navigate(releasePath(ROUTES.PROJECT_RELEASE_DETAIL, release.id))
   }
 
-  const editRelease = (release: ReleaseRecord) => {
-    setSelectedRelease(toSelectedRelease(release))
-    navigate(releasePath(ROUTES.PROJECT_RELEASE_EDIT, release.id))
-  }
-
   const openTestCaseExecution = (release: ReleaseRecord) => {
     if (release.status !== 'ACTIVE') return
     setSelectedRelease(toSelectedRelease(release))
@@ -113,35 +109,45 @@ export const ReleasesPage: React.FC = () => {
 
   const handleStatusChange = async (release: ReleaseRecord, nextStatus: ReleaseStatus) => {
     if (!projectId || nextStatus === release.status) return
+    if (release.status === 'COMPLETED' || nextStatus === 'ACTIVE') return
     const confirmed = await confirm({
       title: 'Change Release Status',
       message: `Change ${release.name} from ${releaseStatusLabel(release.status)} to ${releaseStatusLabel(nextStatus)}?`,
       confirmText: 'Change Status',
     })
     if (!confirmed) return
+    setActionError(null)
     const result = await releaseService.updateReleaseStatus(projectId, release.id, nextStatus)
     if (result.success) {
       toast.success(result.message)
       if (selectedRelease?.releaseId === release.id) setSelectedRelease(toSelectedRelease(result.data))
-      reload()
-    } else toast.error(result.message)
+      refreshReleases()
+      await reload()
+    } else {
+      setActionError(result.message)
+      toast.error(result.message)
+    }
   }
 
-  const handleDelete = async (release: ReleaseRecord) => {
-    if (!projectId) return
+  const handleActivate = async (release: ReleaseRecord) => {
+    if (!projectId || release.status !== 'ON_HOLD') return
     const confirmed = await confirm({
-      title: 'Delete Release',
-      message: `Delete ${release.name}? This action cannot be undone.`,
-      confirmText: 'Delete',
-      variant: 'danger',
+      title: 'Activate Release',
+      message: `Activate ${release.name}? Only one Release can be ACTIVE for this Project.`,
+      confirmText: 'Activate Release',
     })
     if (!confirmed) return
-    const result = await releaseService.deleteRelease(projectId, release.id)
+    setActionError(null)
+    const result = await releaseService.updateReleaseStatus(projectId, release.id, 'ACTIVE')
     if (result.success) {
-      if (selectedRelease?.releaseId === release.id) clearSelectedRelease()
+      setSelectedRelease(toSelectedRelease(result.data))
+      refreshReleases()
       toast.success(result.message)
-      reload()
-    } else toast.error(result.message)
+      await reload()
+    } else {
+      setActionError(result.message)
+      toast.error(result.message)
+    }
   }
 
   const clearFilters = () => {
@@ -158,6 +164,12 @@ export const ReleasesPage: React.FC = () => {
         <Filter label="Release Type" value={releaseTypeId} options={releaseTypeOptions} onChange={setReleaseTypeId} />
         <Button variant="filterClear" size="sm" leftIcon={<X className="h-4 w-4" />} onClick={clearFilters} disabled={!search && status === 'All' && releaseTypeId === 'All'}>Clear Filters</Button>
       </div>
+      {actionError && (
+        <div role="alert" className="mb-4 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-signal-critical" aria-hidden="true" />
+          <div><p className="text-sm font-semibold text-signal-critical">Release status was not changed</p><p className="mt-1 text-sm text-red-700">{actionError}</p></div>
+        </div>
+      )}
       {isLoading ? (
         <div className="flex h-56 items-center justify-center rounded-lg border border-ink-200 bg-white shadow-panel"><Loader label="Loading releases..." /></div>
       ) : error ? (
@@ -208,13 +220,12 @@ export const ReleasesPage: React.FC = () => {
                 <div className="flex flex-wrap items-center justify-end gap-1 border-t border-ink-100 px-3 py-2" onClick={(event) => event.stopPropagation()}>
                   <button type="button" title="View release" onClick={() => openRelease(release)} className="rounded p-1.5 text-ink-400 hover:bg-ink-100 hover:text-brand-600"><Eye className="h-4 w-4" /></button>
                   {isActive && <button type="button" title="Open Test Case Execution" onClick={() => openTestCaseExecution(release)} className="rounded p-1.5 text-brand-600 hover:bg-brand-500/10"><ExternalLink className="h-4 w-4" /></button>}
-                  {canManageReleases && hasPrivilege(PRIV.RELEASE_UPDATE) && release.status !== 'COMPLETED' && <button type="button" title="Edit release" onClick={() => editRelease(release)} className="rounded p-1.5 text-ink-400 hover:bg-ink-100 hover:text-brand-600"><Edit className="h-4 w-4" /></button>}
+                  {canManageReleases && hasPrivilege(PRIV.RELEASE_STATUS_CHANGE) && release.status === 'ON_HOLD' && <Button size="sm" leftIcon={<PlayCircle className="h-4 w-4" />} onClick={() => handleActivate(release)}>Activate</Button>}
                   {canManageReleases && hasPrivilege(PRIV.RELEASE_STATUS_CHANGE) && release.status !== 'COMPLETED' && (
                     <select aria-label={`Change ${release.name} status`} value={release.status} onChange={(event) => handleStatusChange(release, event.target.value as ReleaseStatus)} className="h-8 rounded border border-ink-200 bg-white px-2 text-xs text-ink-700 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400/40">
-                      {RELEASE_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      {RELEASE_STATUS_OPTIONS.filter((option) => release.status === 'ACTIVE' || option.value !== 'ACTIVE').map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
                   )}
-                  {canManageReleases && hasPrivilege(PRIV.RELEASE_DELETE) && release.status === 'ON_HOLD' && <button type="button" title="Delete release" onClick={() => handleDelete(release)} className="rounded p-1.5 text-ink-400 hover:bg-red-50 hover:text-signal-critical"><Trash2 className="h-4 w-4" /></button>}
                 </div>
               </article>
             )

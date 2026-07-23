@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { ArrowLeft, CalendarDays, Edit, Tag } from 'lucide-react'
+import { ArrowLeft, CalendarDays, Tag } from 'lucide-react'
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import { Badge } from '@/components/common/Badge'
 import { Button } from '@/components/common/Button'
@@ -8,9 +8,7 @@ import { ErrorMessage } from '@/components/common/ErrorMessage'
 import { Loader } from '@/components/common/Loader'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { ProjectWorkspaceOutletContext } from '@/components/projects/ProjectWorkspaceLayout'
-import { PRIV } from '@/constants/privileges'
 import { ROUTES } from '@/constants/routes'
-import { useAuth } from '@/hooks/useAuth'
 import { useRelease } from '@/hooks/useRelease'
 import { releaseService } from '@/services/releaseService'
 import { ReleaseRecord } from '@/types/release'
@@ -20,7 +18,6 @@ import { toSelectedRelease } from '@/utils/release'
 export const ReleaseWorkspacePage: React.FC = () => {
   const { releaseId } = useParams<{ releaseId: string }>()
   const { project } = useOutletContext<ProjectWorkspaceOutletContext>()
-  const { hasPrivilege } = useAuth()
   const { setSelectedRelease } = useRelease()
   const navigate = useNavigate()
   const [release, setRelease] = useState<ReleaseRecord | null>(null)
@@ -64,7 +61,6 @@ export const ReleaseWorkspacePage: React.FC = () => {
       <PageHeader
         title="Release Workspace"
         description={`${release.name} | Version ${release.version}`}
-        actions={project.status === 'ACTIVE' && hasPrivilege(PRIV.RELEASE_UPDATE) ? <Button variant="outline" leftIcon={<Edit className="h-4 w-4" />} onClick={() => navigate(releaseRoute(ROUTES.PROJECT_RELEASE_EDIT))}>Edit Release</Button> : undefined}
       />
 
       <div className="grid gap-3 sm:grid-cols-3">

@@ -18,7 +18,6 @@ import { DefectsPage } from '@/pages/workspace/DefectsPage'
 import { ReportsPage } from '@/pages/workspace/ReportsPage'
 import { ReleaseCreatePage } from '@/pages/workspace/releases/ReleaseCreatePage'
 import { ReleaseDetailPage } from '@/pages/workspace/releases/ReleaseDetailPage'
-import { ReleaseEditPage } from '@/pages/workspace/releases/ReleaseEditPage'
 import { ReleaseWorkspacePage } from '@/pages/workspace/releases/ReleaseWorkspacePage'
 import { ReleaseTestCaseAllocationPage } from '@/pages/workspace/releases/ReleaseTestCaseAllocationPage'
 
@@ -120,7 +119,6 @@ export const AppRoutes: React.FC = () => {
           <Route path="releases/test-case-execution" element={guarded(PRIV.TESTCASE_EXECUTION_VIEW, <ReleaseTestCaseExecutionPage />)} />
           <Route path="releases/test-case-allocation" element={guarded(PRIV.TESTCASE_VIEW, <ReleaseTestCaseAllocationPage />)} />
           <Route path="releases/create" element={guarded(PRIV.RELEASE_CREATE, <ReleaseCreatePage />)} />
-          <Route path="releases/:releaseId/edit" element={guarded(PRIV.RELEASE_UPDATE, <ReleaseEditPage />)} />
           <Route path="releases/:releaseId/workspace" element={guarded(PRIV.RELEASE_VIEW, <ReleaseWorkspacePage />)} />
           <Route path="releases/:releaseId" element={guarded(PRIV.RELEASE_VIEW, <ReleaseDetailPage />)} />
           <Route path="defects" element={guarded(PRIV.DEFECT_VIEW, <DefectsPage />)} />

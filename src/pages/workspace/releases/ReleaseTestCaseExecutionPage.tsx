@@ -98,7 +98,7 @@ function AnimatedCount({ value }: { value: number }) {
 export const ReleaseTestCaseExecutionPage: React.FC = () => {
   const { project } = useOutletContext<ProjectWorkspaceOutletContext>()
   const { user, hasPrivilege } = useAuth()
-  const { selectedRelease, setSelectedRelease, clearSelectedRelease } = useRelease()
+  const { selectedRelease, setSelectedRelease, clearSelectedRelease, releaseRevision } = useRelease()
   const toast = useToast()
   const confirm = useConfirm()
 
@@ -160,7 +160,7 @@ export const ReleaseTestCaseExecutionPage: React.FC = () => {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id])
+  }, [project.id, releaseRevision])
 
   const releaseId = activeRelease?.id
   const employeeId = user?.id ?? ''

@@ -3,6 +3,7 @@ import { Card } from '@/components/common/Card'
 import { Dropdown } from '@/components/common/Dropdown'
 import { Input } from '@/components/common/Input'
 import { FormActions } from '@/components/forms/FormActions'
+import { FormErrorAlert } from '@/components/forms/FormErrorAlert'
 import { FormRow } from '@/components/forms/FormRow'
 import { useForm } from '@/hooks/useForm'
 import { releaseTypeService } from '@/services/releaseTypeService'
@@ -80,6 +81,7 @@ export const ReleaseForm: React.FC<ReleaseFormProps> = ({
     if (!form.validateAll()) return
     onSubmit({
       ...form.values,
+      status: mode === 'create' ? 'ON_HOLD' : form.values.status,
       name: form.values.name.trim(),
       version: form.values.version.trim(),
       description: form.values.description.trim(),
@@ -89,7 +91,7 @@ export const ReleaseForm: React.FC<ReleaseFormProps> = ({
   return (
     <>
       <Card title="Release Information" subtitle="Release names and versions must be unique within the selected project.">
-        {submitError && <div className="mb-5 rounded-md bg-red-50 p-4 text-sm text-signal-critical">{submitError}</div>}
+        <FormErrorAlert message={submitError} title={`Release could not be ${mode === 'create' ? 'created' : 'updated'}`} />
         <div className="flex flex-col gap-5">
           <FormRow>
             <Input label="Release Name" required value={form.values.name} error={form.touched.name ? form.errors.name : undefined} onChange={(event) => form.setValue('name', event.target.value)} />
@@ -97,8 +99,19 @@ export const ReleaseForm: React.FC<ReleaseFormProps> = ({
           </FormRow>
           <FormRow>
             <Dropdown label="Release Type" required value={form.values.releaseTypeId} options={releaseTypes} error={(form.touched.releaseTypeId ? form.errors.releaseTypeId : undefined) || releaseTypeError || undefined} onChange={(event) => form.setValue('releaseTypeId', event.target.value)} />
-            <Dropdown label="Status" required disabled={mode === 'edit' && !canChangeStatus} value={form.values.status} options={RELEASE_STATUS_OPTIONS} error={form.touched.status ? form.errors.status : undefined} onChange={(event) => form.setValue('status', event.target.value as ReleaseStatus)} />
+            <Dropdown
+              label="Status"
+              required
+              disabled={mode === 'create' || (mode === 'edit' && !canChangeStatus)}
+              value={mode === 'create' ? 'ON_HOLD' : form.values.status}
+              options={mode === 'create'
+                ? RELEASE_STATUS_OPTIONS.filter((option) => option.value === 'ON_HOLD')
+                : RELEASE_STATUS_OPTIONS.filter((option) => form.values.status === 'ACTIVE' || option.value !== 'ACTIVE')}
+              error={form.touched.status ? form.errors.status : undefined}
+              onChange={(event) => form.setValue('status', event.target.value as ReleaseStatus)}
+            />
           </FormRow>
+          {mode === 'create' && <p className="-mt-3 text-xs text-ink-500">New Releases are created On Hold. Activate the Release from Release Management when it is ready.</p>}
           <FormRow columns={1}>
             <Input type="date" label="Release Date" required min={projectStartDate} max={projectEndDate} value={form.values.releaseDate} error={form.touched.releaseDate ? form.errors.releaseDate : undefined} onChange={(event) => form.setValue('releaseDate', event.target.value)} />
           </FormRow>

@@ -7,7 +7,7 @@ import {
   EmployeeUpdateRequest,
   Gender,
 } from '@/types/employee'
-import { apiRequest, fail, ok } from './apiClient'
+import { apiRequest, fail, ok, resolveApiAssetUrl } from './apiClient'
 
 const ENDPOINT = '/employees'
 
@@ -37,23 +37,27 @@ const mapEmployee = (item: BackendEmployee): EmployeeResponse => ({
   designationId: Number(item.designationId ?? 0),
   designationName: String(item.designationName ?? ''),
   active: item.active ?? item.status === 'ACTIVE',
-  profileImage: item.profileImage ?? null,
+  profileImage: resolveApiAssetUrl(item.profileImage),
   avatarColor: item.avatarColor ?? null,
   superUser: Boolean(item.superUser),
   createdAt: item.createdAt,
   updatedAt: item.updatedAt,
 })
 
-const normalizeCreate = (payload: EmployeeCreateRequest): EmployeeCreateRequest => ({
-  firstName: payload.firstName.trim(),
-  lastName: payload.lastName.trim(),
-  gender: payload.gender,
-  email: payload.email.trim().toLowerCase(),
-  phoneNo: payload.phoneNo.trim(),
-  joinDate: payload.joinDate,
-  designationId: Number(payload.designationId),
-  profileImage: payload.profileImage?.trim() || null,
-})
+const employeeFormData = (payload: EmployeeCreateRequest | EmployeeUpdateRequest) => {
+  const formData = new FormData()
+  formData.append('firstName', payload.firstName.trim())
+  formData.append('lastName', payload.lastName.trim())
+  formData.append('gender', payload.gender)
+  formData.append('email', payload.email.trim().toLowerCase())
+  formData.append('phoneNo', payload.phoneNo.trim())
+  formData.append('joinDate', payload.joinDate)
+  formData.append('designationId', String(Number(payload.designationId)))
+  if (payload.profileImage) formData.append('profileImage', payload.profileImage, payload.profileImage.name)
+  if ('active' in payload) formData.append('active', String(payload.active))
+  if ('removeProfileImage' in payload && payload.removeProfileImage) formData.append('removeProfileImage', 'true')
+  return formData
+}
 
 const mapResponse = (response: ApiResponse<BackendEmployee>): ApiResponse<EmployeeResponse> =>
   response.success ? ok(mapEmployee(response.data), response.message) : fail(response.message)
@@ -91,12 +95,11 @@ export const employeeService = {
   },
 
   async createEmployee(payload: EmployeeCreateRequest): Promise<ApiResponse<EmployeeResponse>> {
-    return mapResponse(await apiRequest<BackendEmployee>(ENDPOINT, { method: 'POST', body: normalizeCreate(payload) }))
+    return mapResponse(await apiRequest<BackendEmployee>(ENDPOINT, { method: 'POST', body: employeeFormData(payload) }))
   },
 
   async updateEmployee(id: string | number, payload: EmployeeUpdateRequest): Promise<ApiResponse<EmployeeResponse>> {
-    const normalized = { ...normalizeCreate(payload), active: payload.active }
-    return mapResponse(await apiRequest<BackendEmployee>(`${ENDPOINT}/${encodeURIComponent(id)}`, { method: 'PUT', body: normalized }))
+    return mapResponse(await apiRequest<BackendEmployee>(`${ENDPOINT}/${encodeURIComponent(id)}`, { method: 'PUT', body: employeeFormData(payload) }))
   },
 
   async updateEmployeeStatus(id: string | number, active: boolean): Promise<ApiResponse<EmployeeResponse>> {

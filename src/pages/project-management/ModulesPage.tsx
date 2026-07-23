@@ -97,14 +97,30 @@ export const ModulesPage: React.FC = () => {
     setIsLoading(false)
   }
 
+  const loadSubmodules = async (moduleId = selectedModuleId) => {
+    if (!projectId || !moduleId) {
+      setSubmodules([])
+      setSelectedSubmoduleId('')
+      return
+    }
+    const result = await moduleManagementService.getSubmodules(projectId, moduleId)
+    if (!result.success) {
+      toast.error(result.message)
+      setSubmodules([])
+      setSelectedSubmoduleId('')
+      return
+    }
+    setSubmodules(result.data)
+    setSelectedSubmoduleId((current) =>
+      result.data.some((submodule) => submodule.id === current)
+        ? current
+        : result.data[0]?.id ?? '',
+    )
+  }
+
   useEffect(() => { setSelectedModuleId(''); setSelectedSubmoduleId(''); setSearch(''); if (projectId) loadModules() }, [projectId])
   useEffect(() => {
-    if (!projectId || !selectedModuleId) { setSubmodules([]); setSelectedSubmoduleId(''); return }
-    moduleManagementService.getSubmodules(projectId, selectedModuleId).then((r) => {
-      if (!r.success) { toast.error(r.message); setSubmodules([]); return }
-      setSubmodules(r.data)
-      setSelectedSubmoduleId((current) => r.data.some((s) => s.id === current) ? current : r.data[0]?.id ?? '')
-    })
+    void loadSubmodules(selectedModuleId)
   }, [projectId, selectedModuleId])
 
   const filteredModules = useMemo(() => modules.filter((m) => `${m.name} ${m.description}`.toLowerCase().includes(search.toLowerCase())), [modules, search])
@@ -121,14 +137,43 @@ export const ModulesPage: React.FC = () => {
         : null
     if (!result) { setError('Select a submodule to update.'); return }
     if (!result.success) { setError(result.message); return }
+    const affectedModuleId = modal?.startsWith('sub') ? selectedModuleId : ''
     toast.success(result.message); setModal(null); notifyModuleReferenceDataChanged(); await loadModules()
-    if (selectedModuleId) { const subs = await moduleManagementService.getSubmodules(projectId, selectedModuleId); if (subs.success) setSubmodules(subs.data) }
+    if (affectedModuleId) await loadSubmodules(affectedModuleId)
   }
 
-  const deleteModule = async (item: ModuleRecord) => { if (!projectId) return; const r = await moduleManagementService.deleteModule(projectId, item); r.success ? toast.success(r.message) : toast.error(r.message); if (r.success) { notifyModuleReferenceDataChanged(); loadModules() } }
-  const deleteSubmodule = async (item: SubmoduleRecord) => { if (!projectId) return; const r = await moduleManagementService.deleteSubmodule(projectId, item); r.success ? toast.success(r.message) : toast.error(r.message); if (r.success) { notifyModuleReferenceDataChanged(); const subs = await moduleManagementService.getSubmodules(projectId, selectedModuleId); if (subs.success) setSubmodules(subs.data); loadModules() } }
-  const saveQa = async (ids: string[]) => { if (!selectedModule) return; const r = await moduleManagementService.assignQa(selectedModule.id, ids); setModules((prev) => prev.map((m) => m.id === selectedModule.id ? r.data : m)); toast.success(r.message) }
-  const saveDevelopers = async (ids: string[]) => { if (!selectedSubmodule) return; const r = await moduleManagementService.assignDevelopers(selectedSubmodule.id, ids); setSubmodules((prev) => prev.map((s) => s.id === selectedSubmodule.id ? r.data : s)); toast.success(r.message) }
+  const deleteModule = async (item: ModuleRecord) => {
+    if (!projectId) return
+    const result = await moduleManagementService.deleteModule(projectId, item)
+    if (!result.success) { toast.error(result.message); return }
+    toast.success(result.message)
+    notifyModuleReferenceDataChanged()
+    await loadModules()
+  }
+  const deleteSubmodule = async (item: SubmoduleRecord) => {
+    if (!projectId) return
+    const moduleId = item.moduleId
+    const result = await moduleManagementService.deleteSubmodule(projectId, item)
+    if (!result.success) { toast.error(result.message); return }
+    toast.success(result.message)
+    notifyModuleReferenceDataChanged()
+    await Promise.all([loadModules(), loadSubmodules(moduleId)])
+  }
+  const saveQa = async (ids: string[]) => {
+    if (!projectId || !selectedModule) return
+    const result = await moduleManagementService.assignQa(projectId, selectedModule, ids)
+    if (!result.success) { toast.error(result.message); return }
+    toast.success(result.message)
+    await Promise.all([loadModules(), loadSubmodules(selectedModule.id)])
+  }
+  const saveDevelopers = async (ids: string[]) => {
+    if (!projectId || !selectedSubmodule) return
+    const moduleId = selectedSubmodule.moduleId
+    const result = await moduleManagementService.assignDevelopers(projectId, selectedSubmodule, ids)
+    if (!result.success) { toast.error(result.message); return }
+    toast.success(result.message)
+    await Promise.all([loadModules(), loadSubmodules(moduleId)])
+  }
 
   const content = isLoading ? <div className="flex h-64 items-center justify-center"><Loader label="Loading module workspace..." /></div> : (
     <div className="grid gap-4 xl:grid-cols-[0.9fr_1fr_1.15fr]">

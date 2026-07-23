@@ -28,11 +28,12 @@ export interface EmployeeCreateRequest {
   phoneNo: string
   joinDate: string
   designationId: number
-  profileImage?: string | null
+  profileImage?: File | null
 }
 
 export interface EmployeeUpdateRequest extends EmployeeCreateRequest {
   active: boolean
+  removeProfileImage?: boolean
 }
 
 export interface EmployeeDropdownResponse {

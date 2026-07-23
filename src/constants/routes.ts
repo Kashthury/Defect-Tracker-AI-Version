@@ -29,7 +29,6 @@ export const ROUTES = {
   PROJECT_TEST_CASE_ALLOCATION: '/projects/:projectId/releases/test-case-allocation',
   PROJECT_RELEASE_CREATE: '/projects/:projectId/releases/create',
   PROJECT_RELEASE_DETAIL: '/projects/:projectId/releases/:releaseId',
-  PROJECT_RELEASE_EDIT: '/projects/:projectId/releases/:releaseId/edit',
   PROJECT_RELEASE_WORKSPACE: '/projects/:projectId/releases/:releaseId/workspace',
   PROJECT_DEFECTS: '/projects/:projectId/defects',
   PROJECT_ALLOCATION_HISTORY: '/projects/:projectId/allocation-history',

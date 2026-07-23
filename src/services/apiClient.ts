@@ -3,6 +3,19 @@ import { SELECTED_PROJECT_STORAGE_KEY, SESSION_STORAGE_KEY } from '@/constants/a
 
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1').replace(/\/$/, '')
 
+/** Resolve backend-owned file paths such as /uploads/... against the API host. */
+export const resolveApiAssetUrl = (value?: string | null): string | null => {
+  const path = value?.trim()
+  if (!path) return null
+  if (/^(?:https?:|data:|blob:)/i.test(path)) return path
+  try {
+    const apiUrl = new URL(API_BASE_URL, window.location.origin)
+    return new URL(path.startsWith('/') ? path : `/${path}`, apiUrl.origin).toString()
+  } catch {
+    return path
+  }
+}
+
 interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown
   query?: Record<string, string | number | boolean | undefined | null>

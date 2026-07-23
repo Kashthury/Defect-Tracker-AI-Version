@@ -1,10 +1,9 @@
-import { mockModules, mockSubmodules } from '@/mock/moduleManagement'
 import { mockProjectAllocations } from '@/mock/projectAllocations'
 import { mockEmployeeRecords } from '@/mock/employees'
 import { mockRoles } from '@/mock/roles'
 import { ApiResponse } from '@/types/common'
 import { AssignedProjectMember, ModuleRecord, SubmoduleRecord } from '@/types/moduleManagement'
-import { apiRequest, fail, mockDelay, ok } from './apiClient'
+import { apiRequest, fail, ok } from './apiClient'
 import { employeeService } from './employeeService'
 
 let nextModule = 20
@@ -141,6 +140,35 @@ export const moduleManagementService = {
       endDate: '',
     })), response.message)
   },
-  async assignQa(moduleId: string, employeeIds: string[]) { await mockDelay(); const item = mockModules.find((m) => m.id === moduleId); if (!item) return fail<ModuleRecord>('Module not found.'); item.qaEmployeeIds = [...new Set(employeeIds)]; return ok({ ...item }, 'Module QA members updated successfully.') },
-  async assignDevelopers(submoduleId: string, employeeIds: string[]) { await mockDelay(); const item = mockSubmodules.find((s) => s.id === submoduleId); if (!item) return fail<SubmoduleRecord>('Submodule not found.'); item.developerEmployeeIds = [...new Set(employeeIds)]; return ok({ ...item }, 'Submodule developers updated successfully.') },
+  async assignQa(projectId: string, item: ModuleRecord, employeeIds: string[]): Promise<ApiResponse<ModuleRecord>> {
+    const response = await apiRequest<ModuleRecord>(
+      `/projects/${encodeURIComponent(projectId)}/modules/${encodeURIComponent(item.id)}`,
+      {
+        method: 'PUT',
+        body: {
+          name: item.name,
+          description: item.description,
+          active: item.active !== false,
+          qaEmployeeIds: [...new Set(employeeIds)],
+        },
+      },
+    )
+    return response.success ? ok(mapModule(projectId, response.data), response.message) : fail(response.message)
+  },
+  async assignDevelopers(projectId: string, item: SubmoduleRecord, employeeIds: string[]): Promise<ApiResponse<SubmoduleRecord>> {
+    const response = await apiRequest<SubmoduleRecord>(
+      `/projects/${encodeURIComponent(projectId)}/submodules/${encodeURIComponent(item.id)}`,
+      {
+        method: 'PUT',
+        body: {
+          moduleId: item.moduleId,
+          name: item.name,
+          description: item.description,
+          active: item.active !== false,
+          developerEmployeeIds: [...new Set(employeeIds)],
+        },
+      },
+    )
+    return response.success ? ok(mapSubmodule(projectId, response.data), response.message) : fail(response.message)
+  },
 }
