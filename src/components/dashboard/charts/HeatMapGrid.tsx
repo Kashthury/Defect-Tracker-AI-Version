@@ -33,7 +33,7 @@ export const HeatMapGrid: React.FC<HeatMapGridProps> = ({ modules, severities, c
                 return (
                   <td key={severity} className="p-0 text-center">
                     <div
-                      title={`${moduleName} \u00b7 ${severity}: ${cell?.count ?? 0} defects (${risk.toLowerCase()} risk)`}
+                      title={`${moduleName} \u00b7 ${severity}: ${cell?.count ?? 0} defects (${risk.toLowerCase()} risk)${cell?.weightedScore == null ? '' : ` \u00b7 weighted score ${cell.weightedScore}`}`}
                       className="flex h-11 items-center justify-center rounded-md text-sm font-semibold transition-transform hover:scale-105"
                       style={{ backgroundColor: cell && cell.count > 0 ? RISK_COLORS[risk] : RISK_SOFT_COLORS.LOW, color: cell && cell.count > 0 ? '#fff' : '#8B96AC' }}
                     >

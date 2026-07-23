@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { Card } from '@/components/common/Card'
 import { Dropdown } from '@/components/common/Dropdown'
@@ -12,6 +12,7 @@ import { projectAllocationService } from '@/services/projectAllocationService'
 import { Designation } from '@/types/auth'
 import { EmployeeDropdownResponse } from '@/types/employee'
 import { ProjectFormPayload } from '@/types/project'
+import { getTodayDateString } from '@/utils/date'
 import { formatDate } from '@/utils/format'
 import { email } from '@/utils/validation'
 
@@ -48,6 +49,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
   onCancel,
   onSubmit,
 }) => {
+  const submitErrorRef = useRef<HTMLDivElement>(null)
   const [designations, setDesignations] = useState<Designation[]>([])
   const [availableManagers, setAvailableManagers] = useState<EmployeeDropdownResponse[]>([])
   const [isLoadingReferences, setIsLoadingReferences] = useState(true)
@@ -106,6 +108,13 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
   const managerChanged = normalizeId(form.values.managerId) !== initialManagerId
   const managerPercentageChanged = normalizePercentage(form.values.managerAllocationPercentage) !== initialPercentage
   const showEffectiveDate = mode === 'edit' && (managerChanged || managerPercentageChanged)
+
+  useEffect(() => {
+    if (!submitError) return
+    const errorAlert = submitErrorRef.current
+    errorAlert?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    errorAlert?.focus({ preventScroll: true })
+  }, [submitError])
 
   useEffect(() => {
     let active = true
@@ -215,8 +224,19 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
   return (
     <div className="flex flex-col gap-5">
       {(submitError || referenceError) && (
-        <div className="rounded-md bg-red-50 p-4 text-sm text-signal-critical">
-          {submitError || referenceError}
+        <div
+          ref={submitError ? submitErrorRef : undefined}
+          role="alert"
+          aria-live={submitError ? 'assertive' : 'polite'}
+          tabIndex={submitError ? -1 : undefined}
+          className="flex scroll-mt-4 gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-signal-critical outline-none focus:ring-2 focus:ring-signal-critical/30"
+        >
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-semibold">{submitError ? `Project could not be ${mode === 'create' ? 'created' : 'updated'}` : 'Project form is unavailable'}</p>
+            <p className="mt-1 text-sm leading-5 text-red-700">{submitError || referenceError}</p>
+            {submitError && <p className="mt-2 text-xs text-red-600">Review the message, update the relevant Project details, and try again.</p>}
+          </div>
         </div>
       )}
 
@@ -244,6 +264,15 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
             <Input label="Start Date" name="startDate" type="date" required value={form.values.startDate} error={form.touched.startDate ? form.errors.startDate : undefined} onChange={(event) => form.setValue('startDate', event.target.value)} />
             <Input label="End Date" name="endDate" type="date" required value={form.values.endDate} error={form.touched.endDate ? form.errors.endDate : undefined} onChange={(event) => form.setValue('endDate', event.target.value)} />
           </FormRow>
+          {mode === 'edit' && form.values.startDate !== initialValues.startDate && (
+            <p className="text-xs text-amber-700">Project Start Date can only be changed before Project activity begins. The backend will reject changes that conflict with allocation history.</p>
+          )}
+          {mode === 'edit' && form.values.endDate > initialValues.endDate && (
+            <p className="text-xs text-brand-700">The Project Manager allocation will also be validated and extended.</p>
+          )}
+          {mode === 'edit' && form.values.endDate < initialValues.endDate && (
+            <p className="text-xs text-amber-700">The update may be rejected if active or scheduled allocations extend beyond the new Project end date.</p>
+          )}
         </div>
       </Card>
 
@@ -312,6 +341,13 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
                 onChange={(event) => form.setValue('managerChangeEffectiveDate', event.target.value)}
               />
             </FormRow>
+          )}
+          {mode === 'edit' && (
+            <p className="text-xs text-ink-500">
+              {form.values.startDate > getTodayDateString()
+                ? 'The scheduled manager allocation may be updated directly.'
+                : 'Manager changes will preserve the previous manager allocation history.'}
+            </p>
           )}
 
           {managerError && <p className="text-sm text-signal-critical">{managerError}</p>}

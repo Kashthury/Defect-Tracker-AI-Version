@@ -13,6 +13,9 @@ const withProjectId = (route: string, projectId: string) =>
   route.replace(':projectId', projectId)
 
 export const getProjectRouteForCurrentModule = (pathname: string, projectId: string) => {
+  if (/^\/dashboard\/project\/[^/]+$/.test(pathname)) {
+    return withProjectId(ROUTES.PROJECT_DASHBOARD, projectId)
+  }
   if (
     pathname.endsWith('/releases/test-case-execution') ||
     pathname.endsWith('/releases/test-case-allocation')

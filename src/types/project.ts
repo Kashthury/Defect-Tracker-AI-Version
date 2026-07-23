@@ -1,5 +1,6 @@
 export type ProjectStatus = 'ACTIVE' | 'ON_HOLD' | 'COMPLETED'
-export type ProjectAllocationStatus = 'ACTIVE' | 'CLOSED'
+export type AllocationDisplayStatus = 'SCHEDULED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
+export type ProjectAllocationStatus = AllocationDisplayStatus | 'CLOSED'
 export type ProjectAllocationType = 'PROJECT_MANAGER' | 'TEAM_MEMBER'
 
 export interface Project {
@@ -90,25 +91,33 @@ export interface ProjectAllocation {
   updatedAt: string
 }
 
-export interface EmployeeAvailability {
-  employeeId: string
-  currentAllocationPercentage: number
-  availablePercentage: number
-  overlappingAllocationCount: number
+export type EmployeeAvailabilityBand = 'FULLY_AVAILABLE' | 'PARTIALLY_AVAILABLE'
+
+export interface EmployeeAllocationSummary {
+  allocationId: string
+  projectId: string
+  projectName: string
+  roleId: string
+  roleName: string
+  allocationPercentage: number
+  startDate: string
+  endDate: string
+  status: AllocationDisplayStatus
+  managerAllocation: boolean
 }
 
-export type EmployeeAvailabilityBand = 'AVAILABLE' | 'PARTIAL' | 'FULL'
-
-export interface AvailableEmployee extends EmployeeAvailability {
+export interface AvailableEmployee {
+  employeeId: string
   employeeName: string
+  employeeCode?: string
   email: string
-  phone: string
-  joinDate: string
+  phone?: string
+  joinDate?: string
   designationId: string
   designationName: string
-  currentProjects: string[]
-  currentRoles: string[]
-  availabilityBand: EmployeeAvailabilityBand
+  allocatedPercentage: number
+  availablePercentage: number
+  allocations: EmployeeAllocationSummary[]
 }
 
 export interface CreateTeamMemberAllocationsPayload {
@@ -122,6 +131,13 @@ export interface TeamMemberAllocationInput {
   allocationPercentage: number
   startDate: string
   endDate: string
+}
+
+export interface EmployeeAvailability {
+  employeeId: string
+  allocatedPercentage: number
+  availablePercentage: number
+  overlappingAllocationCount: number
 }
 
 export interface AvailableProjectManager extends EmployeeAvailability {
@@ -150,36 +166,47 @@ export interface CloseProjectManagerAllocationPayload {
 }
 
 export interface AllocatedTeamMember {
-  id: string
+  allocationId: string
   projectId: string
   employeeId: string
   employeeName: string
-  email: string
+  employeeCode?: string
+  email?: string
+  designationId?: string
   designationName: string
   roleId: string
   roleName: string
+  roleType: string
   allocationPercentage: number
   startDate: string
   endDate: string
-  status: ProjectAllocationStatus
-  currentAllocationPercentage: number
-  availablePercentage: number
-  availabilityBand: EmployeeAvailabilityBand
+  status: AllocationDisplayStatus
+  managerAllocation: boolean
 }
 
 export interface ExtendTeamMemberAllocationPayload {
-  allocationId: string
-  endDate: string
+  newEndDate: string
 }
 
 export interface UpdateTeamMemberAllocationPercentagePayload {
-  allocationId: string
   allocationPercentage: number
+  effectiveDate: string
+}
+
+export interface UpdateTeamMemberAllocationRolePayload {
+  roleId: string
+  effectiveDate: string
+}
+
+export interface DeallocateTeamMemberPayload {
+  effectiveDate: string
+  reason?: string
 }
 
 export interface DeallocateTeamMembersPayload {
   allocationIds: string[]
-  endDate?: string
+  effectiveDate: string
+  reason?: string
 }
 
 export interface AllocationHistoryEntry {
@@ -191,7 +218,7 @@ export interface AllocationHistoryEntry {
   roleOnProject: string
   allocatedFrom: string
   allocatedTo: string | null
-  allocationPercent: number
+  allocationPercentage: number
   status: ProjectAllocationStatus
 }
 

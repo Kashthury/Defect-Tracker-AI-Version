@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { ChartCard } from '@/components/dashboard/shared/ChartCard'
 import { HeatMapGrid } from '@/components/dashboard/charts/HeatMapGrid'
-import { moduleRiskService } from '@/services/dashboard/moduleRiskService'
+import { projectDashboardService } from '@/services/dashboard/projectDashboardService'
 import { ModuleRiskHeatMap } from '@/types/dashboard'
 
 interface ModuleRiskHeatMapSectionProps {
@@ -18,8 +18,8 @@ export const ModuleRiskHeatMapSection: React.FC<ModuleRiskHeatMapSectionProps> =
     let active = true
     setIsLoading(true)
     setError(null)
-    moduleRiskService
-      .getModuleRiskHeatMap(projectId)
+    projectDashboardService
+      .getModuleRisk(projectId)
       .then((result) => {
         if (!active) return
         if (result.success) setData(result.data)
@@ -43,6 +43,7 @@ export const ModuleRiskHeatMapSection: React.FC<ModuleRiskHeatMapSectionProps> =
       isLoading={isLoading}
       error={error}
       isEmpty={!!data && data.modules.length === 0}
+      emptyLabel="No Module risk data is available."
       height={260}
     >
       {data && <HeatMapGrid modules={data.modules} severities={data.severities} cells={data.cells} />}

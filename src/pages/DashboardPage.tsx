@@ -1,39 +1,32 @@
 import React from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PortfolioDashboard } from '@/components/dashboard/level1/PortfolioDashboard'
 import { ProjectQualityDashboard } from '@/components/dashboard/level2/ProjectQualityDashboard'
+import { ROUTES } from '@/constants/routes'
 import { useAuth } from '@/hooks/useAuth'
 import { useProject } from '@/hooks/useProject'
-import { PortfolioProjectCard } from '@/types/dashboard'
+import { PortfolioProject } from '@/types/dashboard'
 
 export const DashboardPage: React.FC = () => {
+  const { projectId } = useParams<{ projectId: string }>()
+  const navigate = useNavigate()
   const { user } = useAuth()
-  const { selectedProject, setSelectedProject, clearSelectedProject } = useProject()
+  const { setSelectedProject, clearSelectedProject } = useProject()
 
-  const handleSelectProject = (project: PortfolioProjectCard) => {
-    setSelectedProject({
-      projectId: project.projectId,
-      projectName: project.projectName,
-      status: project.status,
-    })
+  const openProject = (project: PortfolioProject) => {
+    setSelectedProject({ projectId: project.projectId, projectName: project.projectName, status: project.status })
+    navigate(ROUTES.PROJECT_DASHBOARD.replace(':projectId', project.projectId))
+  }
+  const back = () => {
+    clearSelectedProject()
+    navigate(ROUTES.DASHBOARD)
   }
 
-  return (
-    <div>
-      <PageHeader
-        title={selectedProject ? selectedProject.projectName : `Welcome back, ${user?.fullName.split(' ')[0]}`}
-        description={
-          selectedProject
-            ? 'Detailed quality analytics for the selected project and release.'
-            : 'Organization-wide project risk overview across your portfolio.'
-        }
-      />
-
-      {selectedProject ? (
-        <ProjectQualityDashboard projectId={selectedProject.projectId} onBackToPortfolio={clearSelectedProject} />
-      ) : (
-        <PortfolioDashboard onSelectProject={handleSelectProject} />
-      )}
-    </div>
-  )
+  return <div>
+    {!projectId && <PageHeader title={`Welcome back, ${user?.fullName.split(' ')[0]}`} description="Organization-wide Project quality and risk overview." />}
+    {projectId
+      ? <ProjectQualityDashboard projectId={projectId} onBackToPortfolio={back} />
+      : <PortfolioDashboard onSelectProject={openProject} />}
+  </div>
 }

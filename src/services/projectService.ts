@@ -58,9 +58,17 @@ export const projectService = {
   async updateProjectStatus(
     projectId: string,
     status: ProjectStatus,
+    effectiveCompletionDate?: string,
   ): Promise<ApiResponse<Project>> {
     if (!(['ACTIVE', 'ON_HOLD', 'COMPLETED'] as ProjectStatus[]).includes(status)) return fail('Invalid project status.')
-    return apiRequest(`/projects/${encodeURIComponent(projectId)}`, { method: 'PUT', body: { status } })
+    if (status === 'COMPLETED' && !effectiveCompletionDate) return fail('Effective Completion Date is required.')
+    return apiRequest(`/projects/${encodeURIComponent(projectId)}`, {
+      method: 'PUT',
+      body: {
+        status,
+        ...(status === 'COMPLETED' ? { effectiveCompletionDate } : {}),
+      },
+    })
   },
 
   async deleteProject(projectId: string): Promise<ApiResponse<null>> {

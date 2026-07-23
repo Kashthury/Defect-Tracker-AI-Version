@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Loader } from '@/components/common/Loader'
 import { ErrorMessage } from '@/components/common/ErrorMessage'
-import { severityAnalyticsService } from '@/services/dashboard/severityAnalyticsService'
+import { projectDashboardService } from '@/services/dashboard/projectDashboardService'
 import { SeverityBreakdownData } from '@/types/dashboard'
 import { formatNumber } from '@/utils/format'
 
@@ -24,7 +24,7 @@ export const SeverityBreakdownPanel: React.FC<SeverityBreakdownPanelProps> = ({ 
     let active = true
     setIsLoading(true)
     setError(null)
-    severityAnalyticsService
+    projectDashboardService
       .getSeverityBreakdown(projectId)
       .then((result) => {
         if (!active) return
@@ -42,7 +42,8 @@ export const SeverityBreakdownPanel: React.FC<SeverityBreakdownPanelProps> = ({ 
     }
   }, [projectId, refreshToken])
 
-  const statusLabels = data?.groups[0]?.statusCounts ?? []
+  const groups = Array.isArray(data?.groups) ? data.groups : []
+  const statusLabels = groups[0]?.statusCounts ?? []
 
   return (
     <div className="rounded-xl border border-ink-200 bg-white p-5 shadow-panel">
@@ -53,7 +54,7 @@ export const SeverityBreakdownPanel: React.FC<SeverityBreakdownPanelProps> = ({ 
         </div>
         {data && (
           <div className="flex gap-4 text-xs text-ink-500">
-            <span><strong className="text-ink-900">{formatNumber(data.totalReportedRemarks)}</strong> Total Remarks</span>
+            <span><strong className="text-ink-900">{formatNumber(data.totalReportedDefects)}</strong> Total Reported Defects</span>
             <span><strong className="text-ink-900">{formatNumber(data.totalConfirmedDefects)}</strong> Confirmed Defects</span>
           </div>
         )}
@@ -63,6 +64,8 @@ export const SeverityBreakdownPanel: React.FC<SeverityBreakdownPanelProps> = ({ 
         <div className="flex h-32 items-center justify-center"><Loader label="Loading severity breakdown..." /></div>
       ) : error || !data ? (
         <ErrorMessage message={error ?? 'Severity breakdown unavailable.'} />
+      ) : groups.length === 0 ? (
+        <p className="py-10 text-center text-sm text-ink-500">No severity breakdown data is available for this Project.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] border-separate" style={{ borderSpacing: '0 6px' }}>
@@ -80,7 +83,7 @@ export const SeverityBreakdownPanel: React.FC<SeverityBreakdownPanelProps> = ({ 
               </tr>
             </thead>
             <tbody>
-              {data.groups.map((group) => (
+              {groups.map((group) => (
                 <tr key={group.severity} className="h-10 bg-ink-50/60">
                   <td className="rounded-l-lg px-2">
                     <div className="flex items-center gap-2">

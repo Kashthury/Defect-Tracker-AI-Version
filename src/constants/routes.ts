@@ -2,6 +2,7 @@ export const ROUTES = {
   LOGIN: '/login',
   SESSION_EXPIRED: '/session-expired',
   DASHBOARD: '/dashboard',
+  PROJECT_DASHBOARD: '/dashboard/project/:projectId',
 
   MY_PROJECTS: '/workspace/my-projects',
   RELEASES: '/workspace/releases',

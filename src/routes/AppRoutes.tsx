@@ -92,6 +92,7 @@ export const AppRoutes: React.FC = () => {
         }
       >
         <Route path={ROUTES.DASHBOARD} element={guarded(PRIV.DASHBOARD_VIEW, <DashboardPage />)} />
+        <Route path={ROUTES.PROJECT_DASHBOARD} element={guarded(PRIV.DASHBOARD_VIEW, <DashboardPage />)} />
 
         <Route path={ROUTES.MY_PROJECTS} element={guarded(PRIV.MY_PROJECTS_VIEW, <MyProjectsPage />)} />
         <Route path={ROUTES.RELEASES} element={guarded(PRIV.RELEASE_VIEW, <ReleasesPage />)} />

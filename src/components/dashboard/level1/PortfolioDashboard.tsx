@@ -1,156 +1,111 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import { AlertOctagon, CheckCircle2, Clock, FolderKanban, ShieldAlert, ShieldCheck } from 'lucide-react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { Activity, AlertOctagon, CheckCircle2, Clock, Eye, FolderKanban, PauseCircle, PlayCircle, ShieldAlert, ShieldCheck, X } from 'lucide-react'
 import { RISK_COLORS, RiskLevel } from '@/config/riskThresholds'
+import { Badge } from '@/components/common/Badge'
+import { Button } from '@/components/common/Button'
+import { ErrorMessage } from '@/components/common/ErrorMessage'
+import { Filter } from '@/components/common/Filter'
+import { Loader } from '@/components/common/Loader'
+import { Search } from '@/components/common/Search'
+import { DonutChart } from '@/components/dashboard/charts/DonutChart'
+import { ChartCard } from '@/components/dashboard/shared/ChartCard'
 import { MetricCard } from '@/components/dashboard/shared/MetricCard'
 import { RiskBadge } from '@/components/dashboard/shared/RiskBadge'
-import { ChartCard } from '@/components/dashboard/shared/ChartCard'
-import { DonutChart } from '@/components/dashboard/charts/DonutChart'
-import { Loader } from '@/components/common/Loader'
-import { ErrorMessage } from '@/components/common/ErrorMessage'
 import { portfolioDashboardService } from '@/services/dashboard/portfolioDashboardService'
-import { PortfolioDashboardData, PortfolioProjectCard } from '@/types/dashboard'
-import { formatDate, formatNumber } from '@/utils/format'
-import { cn } from '@/utils/cn'
+import { PortfolioDashboardResponse, PortfolioProject } from '@/types/dashboard'
+import { formatDateTime, formatNumber } from '@/utils/format'
 
-type RiskTab = 'HIGH' | 'MEDIUM' | 'LOW'
+const STATUS_OPTIONS = [
+  { label: 'Active', value: 'ACTIVE' },
+  { label: 'On Hold', value: 'ON_HOLD' },
+  { label: 'Completed', value: 'COMPLETED' },
+]
+const RISK_OPTIONS = [
+  { label: 'Low', value: 'LOW' },
+  { label: 'Medium', value: 'MEDIUM' },
+  { label: 'High', value: 'HIGH' },
+  { label: 'Critical', value: 'CRITICAL' },
+]
 
-interface PortfolioDashboardProps {
-  onSelectProject: (project: PortfolioProjectCard) => void
-}
-
-export const PortfolioDashboard: React.FC<PortfolioDashboardProps> = ({ onSelectProject }) => {
-  const [data, setData] = useState<PortfolioDashboardData | null>(null)
+export const PortfolioDashboard: React.FC<{ onSelectProject: (project: PortfolioProject) => void }> = ({ onSelectProject }) => {
+  const [data, setData] = useState<PortfolioDashboardResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<RiskTab>('HIGH')
-  const [reloadKey, setReloadKey] = useState(0)
+  const [search, setSearch] = useState('')
+  const [status, setStatus] = useState('All')
+  const [risk, setRisk] = useState('All')
+  const [delayedOnly, setDelayedOnly] = useState(false)
 
-  useEffect(() => {
-    let active = true
+  const load = useCallback(async () => {
     setIsLoading(true)
     setError(null)
-    portfolioDashboardService
-      .getPortfolioDashboard()
-      .then((result) => {
-        if (!active) return
-        if (result.success) setData(result.data)
-        else setError(result.message)
-        setIsLoading(false)
-      })
-      .catch(() => {
-        if (!active) return
-        setError('Unable to load the portfolio dashboard.')
-        setIsLoading(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [reloadKey])
+    const result = await portfolioDashboardService.getPortfolioDashboard()
+    if (result.success) setData(result.data)
+    else setError(result.message)
+    setIsLoading(false)
+  }, [])
+  useEffect(() => { void load() }, [load])
 
-  const projectsForTab = useMemo(() => {
-    if (!data) return []
-    const risks: Record<RiskTab, RiskLevel[]> = { HIGH: ['HIGH', 'CRITICAL'], MEDIUM: ['MEDIUM'], LOW: ['LOW'] }
-    return data.projects.filter((p) => risks[activeTab].includes(p.risk))
-  }, [data, activeTab])
+  const projects = useMemo(() => data?.projects.filter((project) => {
+    if (search && !project.projectName.toLowerCase().includes(search.trim().toLowerCase())) return false
+    if (status !== 'All' && project.status !== status) return false
+    if (risk !== 'All' && project.risk !== risk) return false
+    if (delayedOnly && !project.delayed) return false
+    return true
+  }) ?? [], [data, delayedOnly, risk, search, status])
 
-  if (isLoading) {
-    return <div className="flex h-72 items-center justify-center"><Loader label="Loading portfolio risk dashboard..." /></div>
-  }
-  if (error || !data) {
-    return <div className="py-10"><ErrorMessage message={error ?? 'Portfolio data unavailable.'} onRetry={() => setReloadKey((k) => k + 1)} /></div>
-  }
+  if (isLoading) return <div className="flex h-72 items-center justify-center"><Loader label="Loading portfolio dashboard..." /></div>
+  if (error || !data) return <div className="py-10"><ErrorMessage message={error ?? 'Portfolio dashboard unavailable.'} onRetry={load} /></div>
 
-  const { summary, riskDistribution } = data
-  const donutData = riskDistribution.map((slice) => ({
-    name: `${slice.risk.charAt(0)}${slice.risk.slice(1).toLowerCase()} Risk`,
-    value: slice.count,
-    color: RISK_COLORS[slice.risk],
+  const summary = data.summary
+  const cards = [
+    ['Total Projects', summary.totalProjects, FolderKanban, '#12507F'],
+    ['Active', summary.activeProjects, PlayCircle, '#3E8E64'],
+    ['On Hold', summary.onHoldProjects, PauseCircle, '#C99A2E'],
+    ['Completed', summary.completedProjects, CheckCircle2, '#64748B'],
+    ['Delayed', summary.delayedProjects, Clock, '#C13B3B'],
+  ] as const
+  const riskCards = [
+    ['Low Risk', summary.lowRiskCount, ShieldCheck, RISK_COLORS.LOW],
+    ['Medium Risk', summary.mediumRiskCount, ShieldAlert, RISK_COLORS.MEDIUM],
+    ['High Risk', summary.highRiskCount, AlertOctagon, RISK_COLORS.HIGH],
+    ['Critical Risk', summary.criticalRiskCount, Activity, RISK_COLORS.CRITICAL],
+  ] as const
+  const donutData = data.riskDistribution.map((item) => ({
+    name: `${item.risk.charAt(0)}${item.risk.slice(1).toLowerCase()} Risk`,
+    value: item.count,
+    color: RISK_COLORS[item.risk],
   }))
 
-  const tabCounts: Record<RiskTab, number> = {
-    HIGH: summary.highRiskCount + summary.criticalRiskCount,
-    MEDIUM: summary.mediumRiskCount,
-    LOW: summary.lowRiskCount,
-  }
+  return <div className="flex flex-col gap-5">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+      {cards.map(([label, value, Icon, accent]) => <MetricCard key={label} label={label} value={formatNumber(value)} icon={<Icon className="h-5 w-5" />} tint="bg-ink-50" accent={accent} />)}
+    </div>
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {riskCards.map(([label, value, Icon, accent]) => <MetricCard key={label} label={label} value={formatNumber(value)} icon={<Icon className="h-4 w-4" />} tint="bg-white" accent={accent} />)}
+    </div>
 
-  return (
-    <div className="flex flex-col gap-5">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        <MetricCard label="Total Projects" value={formatNumber(summary.totalProjects)} icon={<FolderKanban className="h-5 w-5" />} tint="bg-brand-50" accent="#12507F" />
-        <MetricCard label="Low Risk" value={formatNumber(summary.lowRiskCount)} icon={<ShieldCheck className="h-5 w-5" />} tint="bg-emerald-50" accent={RISK_COLORS.LOW} />
-        <MetricCard label="Medium Risk" value={formatNumber(summary.mediumRiskCount)} icon={<ShieldAlert className="h-5 w-5" />} tint="bg-amber-50" accent={RISK_COLORS.MEDIUM} />
-        <MetricCard label="High Risk" value={formatNumber(summary.highRiskCount + summary.criticalRiskCount)} icon={<AlertOctagon className="h-5 w-5" />} tint="bg-orange-50" accent={RISK_COLORS.HIGH} />
-        <MetricCard label="Completed" value={formatNumber(summary.completedProjects)} icon={<CheckCircle2 className="h-5 w-5" />} tint="bg-ink-100" accent="#26314A" />
-        <MetricCard label="Delayed" value={formatNumber(summary.delayedProjects)} icon={<Clock className="h-5 w-5" />} tint="bg-red-50" accent={RISK_COLORS.CRITICAL} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
-        <ChartCard title="Portfolio Risk Distribution" subtitle="Share of active projects by risk category" className="xl:col-span-2" height={300}>
-          <DonutChart data={donutData} centerValue={String(summary.totalProjects)} centerLabel="Projects" />
-        </ChartCard>
-
-        <div className="rounded-xl border border-ink-100 bg-white p-5 shadow-panel xl:col-span-3">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-ink-900">Projects by Risk Category</h3>
-            <div className="flex rounded-lg bg-ink-50 p-1">
-              {(['HIGH', 'MEDIUM', 'LOW'] as RiskTab[]).map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setActiveTab(tab)}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-semibold transition-colors',
-                    activeTab === tab ? 'bg-white shadow-panel' : 'text-ink-500 hover:text-ink-700',
-                  )}
-                  style={activeTab === tab ? { color: RISK_COLORS[tab] } : undefined}
-                >
-                  {tab.charAt(0) + tab.slice(1).toLowerCase()} ({tabCounts[tab]})
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {projectsForTab.length === 0 ? (
-            <p className="py-10 text-center text-xs text-ink-500">No projects fall under this risk category.</p>
-          ) : (
-            <div className="flex flex-col gap-2.5">
-              {projectsForTab.map((project) => (
-                <button
-                  key={project.projectId}
-                  type="button"
-                  onClick={() => onSelectProject(project)}
-                  className="flex w-full flex-col gap-2.5 rounded-lg border border-ink-100 p-3.5 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className="h-9 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: RISK_COLORS[project.risk] }} />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-ink-900">{project.projectName}</p>
-                      <p className="text-xs text-ink-500">Release: {project.currentRelease} &middot; Updated {formatDate(project.lastUpdatedAt)}</p>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-4 text-xs sm:gap-5">
-                    <div className="text-center">
-                      <p className="font-semibold text-ink-900">{project.openDefectCount}</p>
-                      <p className="text-ink-400">Open</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="font-semibold" style={{ color: RISK_COLORS.CRITICAL }}>{project.criticalDefectCount}</p>
-                      <p className="text-ink-400">Critical</p>
-                    </div>
-                    <div className="w-24">
-                      <div className="h-1.5 overflow-hidden rounded-full bg-ink-100">
-                        <div className="h-full rounded-full bg-brand-500" style={{ width: `${project.completionPercentage}%` }} />
-                      </div>
-                      <p className="mt-1 text-center text-ink-400">{project.completionPercentage}% done</p>
-                    </div>
-                    <RiskBadge risk={project.risk} size="sm" />
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
+    <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
+      <ChartCard title="Portfolio Risk Distribution" subtitle="Current non-completed Project risk from the backend" height={300}>
+        {donutData.length ? <DonutChart data={donutData} centerValue={String(donutData.reduce((sum, item) => sum + item.value, 0))} centerLabel="Projects" /> : <p className="py-20 text-center text-sm text-ink-500">No current risk data is available.</p>}
+      </ChartCard>
+      <div className="rounded-xl border border-ink-100 bg-white p-4 shadow-panel">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <Search value={search} onChange={setSearch} placeholder="Search Project name..." />
+          <Filter label="Status" value={status} options={STATUS_OPTIONS} onChange={setStatus} />
+          <Filter label="Risk" value={risk} options={RISK_OPTIONS} onChange={setRisk} />
+          <label className="inline-flex items-center gap-2 text-sm text-ink-600"><input type="checkbox" checked={delayedOnly} onChange={(event) => setDelayedOnly(event.target.checked)} />Delayed only</label>
+          <Button variant="filterClear" size="sm" leftIcon={<X className="h-4 w-4" />} disabled={!search && status === 'All' && risk === 'All' && !delayedOnly} onClick={() => { setSearch(''); setStatus('All'); setRisk('All'); setDelayedOnly(false) }}>Clear Filters</Button>
         </div>
+        {projects.length === 0 ? <p className="py-12 text-center text-sm text-ink-500">{data.projects.length ? 'No Projects match the selected filters.' : 'No Projects are available for your account.'}</p> : <div className="grid gap-3 md:grid-cols-2">
+          {projects.map((project) => <button key={project.projectId} type="button" onClick={() => onSelectProject(project)} className="rounded-xl border border-ink-100 p-4 text-left transition hover:border-brand-300 hover:bg-brand-50/30">
+            <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-ink-900">{project.projectName}</p><Badge tone={project.status === 'ACTIVE' ? 'success' : project.status === 'ON_HOLD' ? 'medium' : 'neutral'}>{project.status.replace('_', ' ')}</Badge></div><RiskBadge risk={project.risk} size="sm" /></div>
+            <div className="mt-4 grid grid-cols-2 gap-3 text-xs"><div><p className="text-ink-400">Open Defects</p><p className="font-semibold">{project.openDefectCount}</p></div><div><p className="text-ink-400">Critical Open</p><p className="font-semibold text-signal-critical">{project.criticalDefectCount}</p></div></div>
+            <div className="mt-3 text-xs text-ink-500"><p>{project.currentRelease ? `${project.currentRelease.releaseName} · ${project.currentRelease.version}` : 'No active release'}</p><p>{project.testExecutionProgress?.percentage == null ? 'Test execution not available' : `${project.testExecutionProgress.percentage}% test execution`}</p><p className="mt-2">Updated {formatDateTime(project.lastUpdatedAt)}</p></div>
+            <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-brand-600"><Eye className="h-3.5 w-3.5" />View Dashboard</span>
+          </button>)}
+        </div>}
       </div>
     </div>
-  )
+  </div>
 }

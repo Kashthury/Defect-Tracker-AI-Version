@@ -4,7 +4,7 @@ import { DonutChart } from '@/components/dashboard/charts/DonutChart'
 import { HorizontalBarChart } from '@/components/dashboard/charts/HorizontalBarChart'
 import { StackedBarChart } from '@/components/dashboard/charts/StackedBarChart'
 import { TrendLineChart } from '@/components/dashboard/charts/TrendLineChart'
-import { defectTrendService } from '@/services/dashboard/defectTrendService'
+import { projectDashboardService } from '@/services/dashboard/projectDashboardService'
 import { ProjectChartAnalytics } from '@/types/dashboard'
 
 interface ChartAnalyticsSectionProps {
@@ -21,7 +21,7 @@ export const ChartAnalyticsSection: React.FC<ChartAnalyticsSectionProps> = ({ pr
     let active = true
     setIsLoading(true)
     setError(null)
-    defectTrendService
+    projectDashboardService
       .getChartAnalytics(projectId)
       .then((result) => {
         if (!active) return
@@ -51,11 +51,11 @@ export const ChartAnalyticsSection: React.FC<ChartAnalyticsSectionProps> = ({ pr
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      <ChartCard title="Defect Distribution by Type" subtitle="Functional, UI, Performance, Security & more" isLoading={isLoading} error={error} isEmpty={!!data && data.defectTypeDistribution.length === 0}>
+      <ChartCard title="Defect Distribution by Type" subtitle="Backend-reported Defect Type distribution" isLoading={isLoading} error={error} isEmpty={!!data && data.defectTypeDistribution.length === 0} emptyLabel="No Defect Type data is available for this Project.">
         {data && <DonutChart data={data.defectTypeDistribution.map((s) => ({ name: s.type, value: s.count, color: s.color }))} />}
       </ChartCard>
 
-      <ChartCard title="Defects by Module" subtitle="Sorted from highest to lowest defect count" isLoading={isLoading} error={error} isEmpty={!!data && data.defectsByModule.length === 0}>
+      <ChartCard title="Defects by Module" subtitle="Backend-reported Module counts" isLoading={isLoading} error={error} isEmpty={!!data && data.defectsByModule.length === 0} emptyLabel="No Module defect data is available for this Project.">
         {data && <HorizontalBarChart data={data.defectsByModule.map((m) => ({ label: m.moduleName, value: m.count }))} />}
       </ChartCard>
 
@@ -69,7 +69,7 @@ export const ChartAnalyticsSection: React.FC<ChartAnalyticsSectionProps> = ({ pr
         )}
       </ChartCard>
 
-      <ChartCard title="Defects Created vs Closed" subtitle="Monthly trend over the last 8 months" isLoading={isLoading} error={error} isEmpty={!!data && data.defectTrend.every((p) => p.created === 0 && p.closed === 0)}>
+      <ChartCard title="Defects Created vs Closed" subtitle="Monthly trend in backend-provided order" isLoading={isLoading} error={error} isEmpty={!!data && data.defectTrend.length === 0} emptyLabel="Defect history is not available for this chart.">
         {data && (
           <TrendLineChart
             data={data.defectTrend}
@@ -82,7 +82,7 @@ export const ChartAnalyticsSection: React.FC<ChartAnalyticsSectionProps> = ({ pr
         )}
       </ChartCard>
 
-      <ChartCard title="Defects Reopened Multiple Times" subtitle="Grouped by number of reopen cycles" isLoading={isLoading} error={error} isEmpty={!!data && data.reopenedBuckets.every((b) => b.count === 0)}>
+      <ChartCard title="Defects Reopened Multiple Times" subtitle="Grouped by backend reopen buckets" isLoading={isLoading} error={error} isEmpty={!!data && (data.reopenedBuckets.length === 0 || data.reopenedBuckets.every((b) => b.count === 0))} emptyLabel="No Defects have been reopened.">
         {data && (
           <HorizontalBarChart
             data={data.reopenedBuckets.map((b) => ({ label: b.bucket, value: b.count }))}

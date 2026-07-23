@@ -24,7 +24,7 @@ export const AllocationHistoryPage: React.FC = () => {
   const columns: TableColumn<AllocationHistoryEntry>[] = [
     { key: 'employeeName', header: 'Employee', sortable: true, render: (r) => <span className="font-medium text-ink-800">{r.employeeName}</span> },
     { key: 'roleOnProject', header: 'Role on Project', sortable: true, render: (r) => r.roleOnProject },
-    { key: 'allocationPercent', header: 'Allocation', sortable: true, render: (r) => <Badge tone="info">{r.allocationPercent}%</Badge>, align: 'right' },
+    { key: 'allocationPercentage', header: 'Allocation', sortable: true, render: (r) => <Badge tone="info">{r.allocationPercentage}%</Badge>, align: 'right' },
     { key: 'allocatedFrom', header: 'From', sortable: true, render: (r) => formatDate(r.allocatedFrom), align: 'right' },
     { key: 'allocatedTo', header: 'To', sortable: true, render: (r) => (r.allocatedTo ? formatDate(r.allocatedTo) : <Badge tone="success">Ongoing</Badge>), align: 'right' },
   ]

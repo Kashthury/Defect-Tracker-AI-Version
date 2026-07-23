@@ -9,6 +9,7 @@ import { ErrorMessage } from '@/components/common/ErrorMessage'
 import { Filter } from '@/components/common/Filter'
 import { Input } from '@/components/common/Input'
 import { Loader } from '@/components/common/Loader'
+import { Modal } from '@/components/common/Modal'
 import { Pagination } from '@/components/common/Pagination'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PRIV } from '@/constants/privileges'
@@ -43,6 +44,10 @@ export const ProjectsPage: React.FC = () => {
   const [startDateFrom, setStartDateFrom] = useState('')
   const [endDateTo, setEndDateTo] = useState('')
   const [managerOptions, setManagerOptions] = useState<{ label: string; value: string }[]>([])
+  const [completionTarget, setCompletionTarget] = useState<Project | null>(null)
+  const [completionDate, setCompletionDate] = useState('')
+  const [completionError, setCompletionError] = useState<string | undefined>()
+  const [isCompleting, setIsCompleting] = useState(false)
 
   useEffect(() => {
     projectService.getProjectManagerOptions().then((result) => {
@@ -79,11 +84,19 @@ export const ProjectsPage: React.FC = () => {
 
   const handleStatusChange = async (project: Project, nextStatus: ProjectStatus) => {
     if (nextStatus === project.status) return
+    if (nextStatus === 'COMPLETED') {
+      setCompletionTarget(project)
+      setCompletionDate(project.endDate)
+      setCompletionError(undefined)
+      return
+    }
     const confirmed = await confirm({
       title: 'Change Project Status',
-      message: `Change ${project.name} from ${statusLabel(project.status)} to ${statusLabel(nextStatus)}?`,
+      message: nextStatus === 'ON_HOLD'
+        ? `Place ${project.name} on hold? Existing employee capacity will remain reserved while the Project is on hold.`
+        : `Change ${project.name} from ${statusLabel(project.status)} to ${statusLabel(nextStatus)}?`,
       confirmText: `Set ${statusLabel(nextStatus)}`,
-      variant: nextStatus === 'COMPLETED' ? 'danger' : 'primary',
+      variant: 'primary',
     })
     if (!confirmed) return
     const result = await projectService.updateProjectStatus(project.id, nextStatus)
@@ -95,6 +108,29 @@ export const ProjectsPage: React.FC = () => {
       }
       reload()
     } else toast.error(result.message)
+  }
+
+  const completeProject = async () => {
+    if (!completionTarget || !completionDate) {
+      setCompletionError('Effective Completion Date is required.')
+      return
+    }
+    if (completionDate < completionTarget.startDate) {
+      setCompletionError('Effective Completion Date cannot be before Project Start Date.')
+      return
+    }
+    setIsCompleting(true)
+    const result = await projectService.updateProjectStatus(completionTarget.id, 'COMPLETED', completionDate)
+    setIsCompleting(false)
+    if (!result.success) {
+      setCompletionError(result.message)
+      return
+    }
+    toast.success(result.message)
+    setCompletionTarget(null)
+    await refreshProjects()
+    if (selectedProject?.projectId === result.data.id) clearSelectedProject()
+    reload()
   }
 
   const handleDelete = async (project: Project) => {
@@ -205,6 +241,20 @@ export const ProjectsPage: React.FC = () => {
       )}
 
       <Pagination page={page} onPageChange={setPageNumber} onPageSizeChange={setPageSize} />
+
+      <Modal
+        isOpen={Boolean(completionTarget)}
+        onClose={() => !isCompleting && setCompletionTarget(null)}
+        title="Complete Project"
+        description={completionTarget ? `Complete ${completionTarget.name}.` : undefined}
+        size="sm"
+        footer={<><Button variant="ghost" onClick={() => setCompletionTarget(null)} disabled={isCompleting}>Cancel</Button><Button variant="danger" onClick={completeProject} isLoading={isCompleting}>Complete Project</Button></>}
+      >
+        <div className="space-y-4">
+          <Input label="Effective Completion Date" type="date" required min={completionTarget?.startDate} value={completionDate} error={completionError} onChange={(event) => { setCompletionDate(event.target.value); setCompletionError(undefined) }} />
+          <p className="text-sm text-ink-600">Active allocations will end on the completion date and future scheduled allocations will be cancelled.</p>
+        </div>
+      </Modal>
     </div>
   )
 }

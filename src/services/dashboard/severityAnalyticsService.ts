@@ -24,7 +24,7 @@ export const severityAnalyticsService = {
     const defects = DASHBOARD_DEFECTS.filter((d) => d.projectId === projectId)
     const severityConfig = await getSeverityWeightConfig()
 
-    const totalReportedRemarks = defects.length
+    const totalReportedDefects = defects.length
     const totalConfirmedDefects = defects.filter((d) => CONFIRMED_DEFECT_STATUSES.includes(d.statusCode)).length
 
     const groups = severityConfig.map((sev) => {
@@ -43,7 +43,7 @@ export const severityAnalyticsService = {
       }
     })
 
-    return ok({ totalReportedRemarks, totalConfirmedDefects, groups })
+    return ok({ totalReportedDefects, totalConfirmedDefects, groups })
   },
 }
 

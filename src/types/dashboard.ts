@@ -1,5 +1,5 @@
 import { RiskLevel } from '@/config/riskThresholds'
-import { Project, ProjectStatus } from './project'
+import { ProjectStatus } from './project'
 
 /* ---------------------------------------------------------------------- */
 /* Level 1 — Portfolio Risk Dashboard                                     */
@@ -7,56 +7,125 @@ import { Project, ProjectStatus } from './project'
 
 export interface PortfolioSummary {
   totalProjects: number
+  activeProjects: number
+  onHoldProjects: number
+  completedProjects: number
+  delayedProjects: number
   lowRiskCount: number
   mediumRiskCount: number
   highRiskCount: number
   criticalRiskCount: number
-  completedProjects: number
-  delayedProjects: number
 }
 
-export interface PortfolioRiskSlice {
-  risk: RiskLevel
+export interface RiskDistributionItem {
+  risk: Exclude<RiskLevel, 'NOT_AVAILABLE'>
   count: number
-  percentage: number
 }
 
-export interface PortfolioProjectCard {
+export interface ActiveReleaseSummary {
+  releaseId: string
+  releaseName: string
+  version: string
+  releaseDate: string
+}
+
+export interface TestExecutionProgress {
+  totalAllocatedTestCases: number
+  executedTestCases: number
+  passedTestCases: number
+  failedTestCases: number
+  percentage: number | null
+}
+
+export interface PortfolioProject {
   projectId: string
   projectName: string
-  risk: RiskLevel
   status: ProjectStatus
-  currentRelease: string
+  risk: RiskLevel
   openDefectCount: number
   criticalDefectCount: number
-  completionPercentage: number
+  currentRelease: ActiveReleaseSummary | null
+  testExecutionProgress: TestExecutionProgress | null
+  lastUpdatedAt: string
+  delayed?: boolean
+}
+
+export interface PortfolioDashboardResponse {
+  summary: PortfolioSummary
+  riskDistribution: RiskDistributionItem[]
+  projects: PortfolioProject[]
+}
+
+export type PortfolioProjectCard = PortfolioProject
+export type PortfolioDashboardData = PortfolioDashboardResponse
+
+export interface MetricAvailability {
+  calculationAvailable: boolean
+  reason: string | null
+}
+
+export interface DefectDensityMetric extends MetricAvailability {
+  value: number | null
+  kloc: number | null
+  totalConfirmedDefects: number
+  risk: RiskLevel
+}
+
+export interface SeverityIndexMetric extends MetricAvailability {
+  value: number | null
+  maximumPossibleValue: number | null
+  normalizedPercentage: number | null
+  totalConfirmedDefects: number
+  risk: RiskLevel
+}
+
+export interface ConfirmedDefectRateMetric extends MetricAvailability {
+  value: number | null
+  confirmedDefects: number
+  nonConfirmedDefects: number
+  totalReportedDefects: number
+  risk: RiskLevel
+}
+
+export interface ProjectDashboardCounts {
+  totalReportedDefects: number
+  confirmedDefects: number
+  openDefects: number
+  closedDefects: number
+  criticalOpenDefects: number
+  reopenedDefects: number
+}
+
+export interface ProjectDashboardResponse {
+  project: {
+    projectId: string
+    projectName: string
+    status: ProjectStatus
+    startDate: string
+    endDate: string
+    projectManagerId: string | null
+    projectManagerName: string | null
+  }
+  overallRisk: RiskLevel
+  defectDensity: DefectDensityMetric
+  severityIndex: SeverityIndexMetric
+  confirmedDefectRate: ConfirmedDefectRateMetric
+  currentRelease: ActiveReleaseSummary | null
+  testExecutionProgress: TestExecutionProgress | null
+  counts: ProjectDashboardCounts
   lastUpdatedAt: string
 }
 
-export interface PortfolioDashboardData {
-  summary: PortfolioSummary
-  riskDistribution: PortfolioRiskSlice[]
-  projects: PortfolioProjectCard[]
+export interface ProjectKloc {
+  kloc: number | null
+  source?: string | null
+  recordedDate?: string | null
+  recordedBy?: string | null
 }
 
 /* ---------------------------------------------------------------------- */
 /* Level 2 — Project Quality Dashboard                                    */
 /* ---------------------------------------------------------------------- */
-
-export interface GaugeMetric {
-  value: number
-  risk: RiskLevel
-  zones: { risk: RiskLevel; upTo: number | null }[]
-}
-
-export interface OverallProjectRisk extends GaugeMetric {
-  contributingMetrics: { label: string; risk: RiskLevel }[]
-}
-
-export interface DefectDensityMetric extends GaugeMetric {
-  totalConfirmedDefects: number
-  kloc: number
-}
 
 export interface SeverityWeightConfigEntry {
   severityId: string
@@ -64,18 +133,6 @@ export interface SeverityWeightConfigEntry {
   weight: number
   color: string
   order: number
-}
-
-export interface SeverityIndexMetric extends GaugeMetric {
-  totalWeighted: number
-  totalConfirmedDefects: number
-  breakdown: { severity: string; count: number; weight: number; contribution: number }[]
-}
-
-export interface DefectToRemarkMetric extends GaugeMetric {
-  totalRemarks: number
-  confirmedDefects: number
-  nonConfirmedRemarks: number
 }
 
 export interface SeverityStatusCount {
@@ -93,7 +150,7 @@ export interface SeverityBreakdownGroup {
 }
 
 export interface SeverityBreakdownData {
-  totalReportedRemarks: number
+  totalReportedDefects: number
   totalConfirmedDefects: number
   groups: SeverityBreakdownGroup[]
 }
@@ -171,6 +228,7 @@ export interface ModuleRiskCell {
   severity: string
   count: number
   risk: RiskLevel
+  weightedScore?: number
 }
 
 export interface ModuleRiskHeatMap {
@@ -189,35 +247,4 @@ export interface ActivityFeedItem {
   message: string
   actorName: string
   timestamp: string
-}
-
-export interface ProjectQualityDashboardData {
-  project: Project
-  overallRisk: OverallProjectRisk
-  defectDensity: DefectDensityMetric
-  severityIndex: SeverityIndexMetric
-  defectToRemarkRatio: DefectToRemarkMetric
-}
-
-/* ---------------------------------------------------------------------- */
-/* Git / KLOC calculation                                                 */
-/* ---------------------------------------------------------------------- */
-
-export interface CalculateKlocFromRepoPayload {
-  projectId: string
-  repositoryUrl: string
-  branch: string
-  username?: string
-  personalAccessToken?: string
-}
-
-export interface CalculateKlocResult {
-  projectId: string
-  kloc: number
-  linesOfCode: number
-}
-
-export interface UpdateKlocPayload {
-  projectId: string
-  kloc: number
 }

@@ -11,7 +11,7 @@ interface PercentageRatioBarProps {
 
 /**
  * A stacked percentage fill bar (confirmed vs non-confirmed remarks) rather
- * than a circular gauge — used for the Defect-to-Remark Ratio, so all four
+ * than a circular gauge — used for percentage-based quality metrics, so all four
  * risk metrics read visually differently at a glance.
  */
 export const PercentageRatioBar: React.FC<PercentageRatioBarProps> = ({ value, risk, confirmed, nonConfirmed, total }) => {

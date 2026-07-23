@@ -4,19 +4,20 @@
  * Kept isolated from components and services so that a future Spring Boot
  * backend can own and serve these thresholds (e.g. GET /api/dashboard/risk-config)
  * without any dashboard UI changes. Every risk calculation in the dashboard
- * (Overall Project Risk, Defect Density, Defect Severity Index, Defect-to-Remark
- * Ratio, Portfolio project risk) reads from this single source of truth.
+ * (Overall Project Risk, Defect Density, Defect Severity Index, Confirmed Defect
+ * Rate, Portfolio project risk) reads from this single source of truth.
  */
 
-export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | 'NOT_AVAILABLE'
 
-export const RISK_LEVELS: RiskLevel[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
+export const RISK_LEVELS: Exclude<RiskLevel, 'NOT_AVAILABLE'>[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
 
 export const RISK_LABELS: Record<RiskLevel, string> = {
   LOW: 'Low Risk',
   MEDIUM: 'Medium Risk',
   HIGH: 'High Risk',
   CRITICAL: 'Critical Risk',
+  NOT_AVAILABLE: 'Not available',
 }
 
 /** Hex colors used consistently across gauges, badges, charts and heat maps. */
@@ -25,6 +26,7 @@ export const RISK_COLORS: Record<RiskLevel, string> = {
   MEDIUM: '#C99A2E',
   HIGH: '#D97A3F',
   CRITICAL: '#7A1E2E',
+  NOT_AVAILABLE: '#8B96AC',
 }
 
 export const RISK_SOFT_COLORS: Record<RiskLevel, string> = {
@@ -32,6 +34,7 @@ export const RISK_SOFT_COLORS: Record<RiskLevel, string> = {
   MEDIUM: '#FBF1DC',
   HIGH: '#FCEADE',
   CRITICAL: '#F5E1E4',
+  NOT_AVAILABLE: '#EEF1F6',
 }
 
 export interface MetricZoneThresholds {
@@ -47,7 +50,7 @@ export interface RiskThresholdConfig {
   /** Weighted severity index, expressed on a 0-100 scale. */
   severityIndex: MetricZoneThresholds
   /** Confirmed defects / total reported remarks, expressed as a percentage. */
-  defectToRemarkRatio: MetricZoneThresholds
+  confirmedDefectRate: MetricZoneThresholds
 }
 
 /**
@@ -57,7 +60,7 @@ export interface RiskThresholdConfig {
 export const RISK_THRESHOLDS: RiskThresholdConfig = {
   defectDensity: { low: 5, medium: 15, high: 30 },
   severityIndex: { low: 25, medium: 50, high: 75 },
-  defectToRemarkRatio: { low: 40, medium: 60, high: 80 },
+  confirmedDefectRate: { low: 40, medium: 60, high: 80 },
 }
 
 export function getRiskLevel(value: number, zones: MetricZoneThresholds): RiskLevel {
@@ -67,7 +70,7 @@ export function getRiskLevel(value: number, zones: MetricZoneThresholds): RiskLe
   return 'CRITICAL'
 }
 
-const RISK_RANK: Record<RiskLevel, number> = { LOW: 0, MEDIUM: 1, HIGH: 2, CRITICAL: 3 }
+const RISK_RANK: Record<RiskLevel, number> = { NOT_AVAILABLE: -1, LOW: 0, MEDIUM: 1, HIGH: 2, CRITICAL: 3 }
 
 /** Overall risk is the worst (highest) of the contributing metric risk levels. */
 export function getOverallRisk(levels: RiskLevel[]): RiskLevel {
