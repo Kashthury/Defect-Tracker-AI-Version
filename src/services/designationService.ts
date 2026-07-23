@@ -77,6 +77,7 @@ export const designationService = {
         sortBy: request.sortBy,
         sortDir: request.sortDir,
         search: request.search?.trim(),
+        active: request.filters?.active,
       },
     })
     return response.success

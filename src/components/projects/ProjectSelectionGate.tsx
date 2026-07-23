@@ -21,7 +21,7 @@ export const ProjectSelectionGate: React.FC<{ children: React.ReactNode }> = ({ 
     return <div className="py-10"><ErrorMessage message={projectsError} onRetry={refreshProjects} /></div>
   }
   if (activeProjects.length === 0) {
-    return <EmptyState icon={<FolderKanban className="h-5 w-5" />} title="No active projects available." />
+    return <EmptyState icon={<FolderKanban className="h-5 w-5" />} title="No projects have been assigned to you." />
   }
   if (!selectedProject || !activeProjects.some((project) => project.projectId === selectedProject.projectId)) {
     return (

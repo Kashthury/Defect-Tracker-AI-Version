@@ -4,7 +4,6 @@ export type ProjectAllocationType = 'PROJECT_MANAGER' | 'TEAM_MEMBER'
 
 export interface Project {
   id: string
-  code: string
   name: string
   description: string
   status: ProjectStatus
@@ -16,13 +15,12 @@ export interface Project {
   clientEmail: string
   managerId: string
   managerName: string
+  managerEmployeeCode?: string
   managerDesignationId: string
   managerDesignationName: string
-  managerRoleId: string
-  managerRoleName: string
   managerAllocationPercentage: number
-  managerAllocationStartDate: string
-  managerAllocationEndDate: string
+  managerAllocationStartDate?: string
+  managerAllocationEndDate?: string
   teamCount: number
   moduleCount: number
   openDefects: number
@@ -39,18 +37,34 @@ export interface ProjectFormPayload {
   endDate: string
   designationId: string
   managerId: string
-  projectRoleId: string
-  allocationPercentage: number
-  allocationStartDate: string
-  allocationEndDate: string
+  managerAllocationPercentage: number
+  managerChangeEffectiveDate: string
   clientName: string
   clientPhone: string
   clientCountry: string
   clientEmail: string
 }
 
-export type CreateProjectPayload = ProjectFormPayload
-export type UpdateProjectPayload = ProjectFormPayload
+export interface ProjectCreateRequest {
+  name: string
+  description?: string
+  startDate: string
+  endDate: string
+  managerId: number
+  managerAllocationPercentage: number
+  managerDesignationId?: number
+  clientName: string
+  clientPhone?: string
+  clientCountry: string
+  clientEmail: string
+}
+
+export interface ProjectUpdateRequest extends ProjectCreateRequest {
+  managerChangeEffectiveDate?: string
+}
+
+export type CreateProjectPayload = ProjectCreateRequest
+export type UpdateProjectPayload = ProjectUpdateRequest
 
 export interface ProjectModule {
   id: string

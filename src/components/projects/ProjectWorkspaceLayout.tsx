@@ -3,7 +3,6 @@ import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { ErrorMessage } from '@/components/common/ErrorMessage'
 import { Loader } from '@/components/common/Loader'
-import { PRIV } from '@/constants/privileges'
 import { ROUTES } from '@/constants/routes'
 import { useAuth } from '@/hooks/useAuth'
 import { useProject } from '@/hooks/useProject'
@@ -20,7 +19,7 @@ export const ProjectWorkspaceLayout: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
   const location = useLocation()
-  const { user, hasPrivilege } = useAuth()
+  const { user } = useAuth()
   const { setSelectedProject } = useProject()
   const [project, setProject] = useState<Project | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -31,15 +30,7 @@ export const ProjectWorkspaceLayout: React.FC = () => {
     setIsLoading(true)
     setError(null)
     try {
-      const canViewAllProjects =
-        hasPrivilege(PRIV.PROJECT_CREATE) ||
-        hasPrivilege(PRIV.PROJECT_UPDATE) ||
-        hasPrivilege(PRIV.PROJECT_DELETE)
-      const result = await projectService.getAuthorizedProjectById(
-        projectId,
-        user.id,
-        canViewAllProjects,
-      )
+      const result = await projectService.getAuthorizedProjectById(projectId)
       if (!result.success) {
         setError(result.message)
         return
@@ -55,7 +46,7 @@ export const ProjectWorkspaceLayout: React.FC = () => {
     } finally {
       setIsLoading(false)
     }
-  }, [hasPrivilege, projectId, setSelectedProject, user])
+  }, [projectId, setSelectedProject, user])
 
   useEffect(() => {
     loadProject()

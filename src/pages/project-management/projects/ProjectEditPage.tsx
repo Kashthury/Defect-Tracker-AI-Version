@@ -9,7 +9,7 @@ import { ROUTES } from '@/constants/routes'
 import { useToast } from '@/context/ToastContext'
 import { useProject } from '@/hooks/useProject'
 import { projectService } from '@/services/projectService'
-import { Project, ProjectFormPayload } from '@/types/project'
+import { Project, ProjectFormPayload, ProjectUpdateRequest } from '@/types/project'
 
 export const ProjectEditPage: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>()
@@ -42,10 +42,8 @@ export const ProjectEditPage: React.FC = () => {
         endDate: item.endDate,
         designationId: item.managerDesignationId,
         managerId: item.managerId,
-        projectRoleId: item.managerRoleId,
-        allocationPercentage: item.managerAllocationPercentage,
-        allocationStartDate: item.managerAllocationStartDate,
-        allocationEndDate: item.managerAllocationEndDate,
+        managerAllocationPercentage: item.managerAllocationPercentage,
+        managerChangeEffectiveDate: '',
         clientName: item.clientName,
         clientPhone: item.clientPhone,
         clientCountry: item.clientCountry,
@@ -67,7 +65,25 @@ export const ProjectEditPage: React.FC = () => {
     setIsSubmitting(true)
     setSubmitError(null)
     try {
-      const result = await projectService.updateProject(projectId, values)
+      const managerChanged = String(values.managerId) !== String(initialValues?.managerId ?? '')
+      const percentageChanged = Number(values.managerAllocationPercentage) !== Number(initialValues?.managerAllocationPercentage)
+      const payload: ProjectUpdateRequest = {
+        name: values.name.trim(),
+        description: values.description.trim() || undefined,
+        startDate: values.startDate,
+        endDate: values.endDate,
+        managerId: Number(values.managerId),
+        managerAllocationPercentage: Number(values.managerAllocationPercentage),
+        managerDesignationId: Number(values.designationId),
+        clientName: values.clientName.trim(),
+        clientPhone: values.clientPhone.trim() || undefined,
+        clientCountry: values.clientCountry.trim(),
+        clientEmail: values.clientEmail.trim(),
+        ...((managerChanged || percentageChanged) && values.managerChangeEffectiveDate
+          ? { managerChangeEffectiveDate: values.managerChangeEffectiveDate }
+          : {}),
+      }
+      const result = await projectService.updateProject(projectId, payload)
       if (result.success) {
         await refreshProjects()
         setSelectedProject({ projectId, projectName: result.data.name, status: result.data.status })
@@ -95,6 +111,8 @@ export const ProjectEditPage: React.FC = () => {
         mode="edit"
         projectId={project.id}
         initialValues={initialValues}
+        currentManagerAllocationStartDate={project.managerAllocationStartDate}
+        currentManagerAllocationEndDate={project.managerAllocationEndDate}
         submitError={submitError}
         isSubmitting={isSubmitting}
         onCancel={() => navigate(overviewRoute)}

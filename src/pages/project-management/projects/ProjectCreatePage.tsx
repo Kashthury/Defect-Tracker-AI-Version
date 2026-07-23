@@ -7,7 +7,7 @@ import { ROUTES } from '@/constants/routes'
 import { useToast } from '@/context/ToastContext'
 import { useProject } from '@/hooks/useProject'
 import { projectService } from '@/services/projectService'
-import { ProjectFormPayload } from '@/types/project'
+import { ProjectCreateRequest, ProjectFormPayload } from '@/types/project'
 
 const INITIAL_VALUES: ProjectFormPayload = {
   name: '',
@@ -16,10 +16,8 @@ const INITIAL_VALUES: ProjectFormPayload = {
   endDate: '',
   designationId: '',
   managerId: '',
-  projectRoleId: '',
-  allocationPercentage: 50,
-  allocationStartDate: '',
-  allocationEndDate: '',
+  managerAllocationPercentage: 50,
+  managerChangeEffectiveDate: '',
   clientName: '',
   clientPhone: '',
   clientCountry: '',
@@ -37,7 +35,20 @@ export const ProjectCreatePage: React.FC = () => {
     setIsSubmitting(true)
     setSubmitError(null)
     try {
-      const result = await projectService.createProject(values)
+      const payload: ProjectCreateRequest = {
+        name: values.name.trim(),
+        description: values.description.trim() || undefined,
+        startDate: values.startDate,
+        endDate: values.endDate,
+        managerId: Number(values.managerId),
+        managerAllocationPercentage: Number(values.managerAllocationPercentage),
+        managerDesignationId: Number(values.designationId),
+        clientName: values.clientName.trim(),
+        clientPhone: values.clientPhone.trim() || undefined,
+        clientCountry: values.clientCountry.trim(),
+        clientEmail: values.clientEmail.trim(),
+      }
+      const result = await projectService.createProject(payload)
       if (result.success) {
         await refreshProjects()
         setSelectedProject({

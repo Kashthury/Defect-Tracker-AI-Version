@@ -41,6 +41,7 @@ export interface Employee {
 
 export interface AuthenticatedUser {
   id: string
+  isFirstUser: boolean
   fullName: string
   email: string
   avatarColor: string

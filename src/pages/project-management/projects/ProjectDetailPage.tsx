@@ -37,7 +37,6 @@ export const ProjectDetailPage: React.FC = () => {
         <Card title="Project Information" className="border-ink-200 border-l-4 border-l-brand-500 ring-1 ring-ink-100/70 hover:border-brand-300">
           <div className="grid gap-5 sm:grid-cols-2">
             <DetailField label="Project Name" value={project.name} />
-            <DetailField label="Project Code" value={<span className="font-mono">{project.code}</span>} />
             <DetailField label="Description" value={project.description} wide />
             <DetailField label="Status" value={<Badge tone={project.status === 'ACTIVE' ? 'success' : project.status === 'ON_HOLD' ? 'medium' : 'neutral'}>{project.status === 'ACTIVE' ? 'Active' : project.status === 'ON_HOLD' ? 'On Hold' : 'Completed'}</Badge>} />
             <DetailField label="Current Release" value={project.currentRelease || 'Not scheduled'} />
@@ -49,8 +48,8 @@ export const ProjectDetailPage: React.FC = () => {
         <Card title="Project Manager" className="border-ink-200 border-l-4 border-l-emerald-500 ring-1 ring-ink-100/70 hover:border-emerald-300">
           <div className="grid gap-5 sm:grid-cols-2">
             <DetailField label="Project Manager" value={project.managerName} />
+            <DetailField label="Employee Code" value={project.managerEmployeeCode} />
             <DetailField label="Designation" value={project.managerDesignationName} />
-            <DetailField label="Project Role" value={project.managerRoleName} />
             <DetailField label="Allocation Percentage" value={`${project.managerAllocationPercentage}%`} />
             <DetailField label="Allocation Start Date" value={formatDate(project.managerAllocationStartDate)} />
             <DetailField label="Allocation End Date" value={formatDate(project.managerAllocationEndDate)} />

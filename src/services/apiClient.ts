@@ -70,6 +70,11 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
         window.dispatchEvent(new CustomEvent('auth:unauthorized', { detail: message }))
         if (window.location.pathname !== '/login') window.location.assign('/login')
       }
+      if (response.status === 403 && url.pathname.includes('/projects')) {
+        window.dispatchEvent(new CustomEvent('project:forbidden', {
+          detail: { message, path: url.pathname, status: response.status },
+        }))
+      }
       return fail<T>(message)
     }
     if (typeof payload === 'object' && payload && 'success' in payload) {

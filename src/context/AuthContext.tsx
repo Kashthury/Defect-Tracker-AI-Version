@@ -72,6 +72,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return false
       }
       sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(response.data))
+      sessionStorage.removeItem(SELECTED_PROJECT_STORAGE_KEY)
       setSession(response.data)
       return true
     } finally {
@@ -92,6 +93,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     (code?: string) => {
       if (!code) return true
       if (!session) return false
+      if (session.user.isFirstUser) return true
       return session.user.privileges.some((p) => p.code === code)
     },
     [session],

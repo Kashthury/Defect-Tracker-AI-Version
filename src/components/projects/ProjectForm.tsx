@@ -1,34 +1,39 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { Card } from '@/components/common/Card'
 import { Dropdown } from '@/components/common/Dropdown'
 import { Input } from '@/components/common/Input'
 import { FormActions } from '@/components/forms/FormActions'
 import { FormRow } from '@/components/forms/FormRow'
-import { ROLE_TYPES } from '@/constants/roleTypes'
 import { useForm } from '@/hooks/useForm'
 import { designationService } from '@/services/designationService'
 import { employeeService } from '@/services/employeeService'
 import { projectAllocationService } from '@/services/projectAllocationService'
-import { roleService } from '@/services/roleService'
 import { Designation } from '@/types/auth'
 import { EmployeeDropdownResponse } from '@/types/employee'
 import { ProjectFormPayload } from '@/types/project'
+import { formatDate } from '@/utils/format'
 import { email } from '@/utils/validation'
 
 interface ProjectFormProps {
   mode: 'create' | 'edit'
   initialValues: ProjectFormPayload
   projectId?: string
+  currentManagerAllocationStartDate?: string
+  currentManagerAllocationEndDate?: string
   submitError?: string | null
   isSubmitting: boolean
   onCancel: () => void
   onSubmit: (values: ProjectFormPayload) => void
 }
 
+const normalizeId = (value: string) => String(value ?? '').trim()
+const normalizePercentage = (value: number) => Number(value)
+
 const percentValidator = (value: number) => {
-  if (!Number.isFinite(value) || value <= 0) return 'Allocation Percentage must be greater than 0.'
-  if (value > 100) return 'Allocation Percentage cannot exceed 100%.'
+  if (!Number.isFinite(value)) return 'Manager Allocation Percentage must be a valid number.'
+  if (value <= 0) return 'Manager Allocation Percentage must be greater than 0.'
+  if (value > 100) return 'Manager Allocation Percentage cannot exceed 100%.'
   return undefined
 }
 
@@ -36,13 +41,14 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
   mode,
   initialValues,
   projectId,
+  currentManagerAllocationStartDate,
+  currentManagerAllocationEndDate,
   submitError,
   isSubmitting,
   onCancel,
   onSubmit,
 }) => {
   const [designations, setDesignations] = useState<Designation[]>([])
-  const [projectManagerRoleId, setProjectManagerRoleId] = useState('')
   const [availableManagers, setAvailableManagers] = useState<EmployeeDropdownResponse[]>([])
   const [isLoadingReferences, setIsLoadingReferences] = useState(true)
   const [isLoadingManagers, setIsLoadingManagers] = useState(false)
@@ -50,11 +56,18 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
   const [managerError, setManagerError] = useState<string | null>(null)
   const [dateWarnings, setDateWarnings] = useState<string[]>([])
 
+  const initialManagerId = normalizeId(initialValues.managerId)
+  const initialPercentage = normalizePercentage(initialValues.managerAllocationPercentage)
+
   const form = useForm<ProjectFormPayload>({
     initialValues,
     requireDirtyToSubmit: mode === 'edit',
     schema: {
-      name: { required: true, label: 'Project Name' },
+      name: {
+        required: true,
+        label: 'Project Name',
+        validate: (value) => value.trim() ? undefined : 'Project Name is required.',
+      },
       startDate: { required: true, label: 'Start Date' },
       endDate: {
         required: true,
@@ -64,24 +77,23 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
             ? 'End Date cannot be earlier than Start Date.'
             : undefined,
       },
-      designationId: { required: true, label: 'Designation' },
+      designationId: { required: true, label: 'Project Manager Designation' },
       managerId: { required: true, label: 'Project Manager' },
-      allocationPercentage: {
+      managerAllocationPercentage: {
         required: true,
-        label: 'Allocation Percentage',
+        label: 'Manager Allocation Percentage',
         validate: percentValidator,
       },
-      allocationStartDate: { required: true, label: 'Allocation Start Date' },
-      allocationEndDate: {
-        required: true,
-        label: 'Allocation End Date',
+      managerChangeEffectiveDate: {
+        label: 'Manager Change Effective Date',
         validate: (value, values) => {
-          if (values?.allocationStartDate && value < values.allocationStartDate) {
-            return 'Allocation End Date cannot be earlier than Allocation Start Date.'
-          }
-          if (values?.endDate && value > values.endDate) {
-            return 'Allocation End Date must be within the project period.'
-          }
+          if (mode !== 'edit') return undefined
+          const managerChanged = normalizeId(values?.managerId ?? '') !== initialManagerId
+          const percentageChanged = normalizePercentage(values?.managerAllocationPercentage ?? 0) !== initialPercentage
+          if (!managerChanged && !percentageChanged) return undefined
+          if (!value) return 'Manager Change Effective Date is required.'
+          if (values?.startDate && value < values.startDate) return 'Effective Date must be within the Project period.'
+          if (values?.endDate && value > values.endDate) return 'Effective Date must be within the Project period.'
           return undefined
         },
       },
@@ -91,41 +103,26 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
     },
   })
 
+  const managerChanged = normalizeId(form.values.managerId) !== initialManagerId
+  const managerPercentageChanged = normalizePercentage(form.values.managerAllocationPercentage) !== initialPercentage
+  const showEffectiveDate = mode === 'edit' && (managerChanged || managerPercentageChanged)
+
   useEffect(() => {
     let active = true
-    Promise.all([
-      designationService.getDesignations({ pageNumber: 0, pageSize: 100, sortBy: 'title' }),
-      roleService.getRoles({ pageNumber: 0, pageSize: 100, filters: { status: 'ACTIVE' } }),
-    ])
-      .then(([designationResult, roleResult]) => {
+    designationService
+      .getDesignations({ pageNumber: 0, pageSize: 100, sortBy: 'title', sortDir: 'asc', filters: { active: true } })
+      .then((result) => {
         if (!active) return
-        if (!designationResult.success || !roleResult.success) {
-          setReferenceError(
-            designationResult.success ? roleResult.message : designationResult.message,
-          )
-          return
-        }
-        setDesignations(designationResult.data.content)
-        const projectManagerRole = roleResult.data.content.find(
-          (role) => role.roleType === ROLE_TYPES.PROJECT_MANAGER,
-        )
-        if (!projectManagerRole) {
-          setReferenceError('An active Project Manager role is required to create or update a project.')
-          return
-        }
-        setProjectManagerRoleId(projectManagerRole.id)
-        form.setValue('projectRoleId', projectManagerRole.id)
+        if (result.success) setDesignations(result.data.content)
+        else setReferenceError(result.message)
       })
       .catch(() => {
-        if (active) setReferenceError('Unable to load project form reference data.')
+        if (active) setReferenceError('Unable to load active designations.')
       })
       .finally(() => {
         if (active) setIsLoadingReferences(false)
       })
-    return () => {
-      active = false
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { active = false }
   }, [])
 
   useEffect(() => {
@@ -158,9 +155,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
       .finally(() => {
         if (active) setIsLoadingManagers(false)
       })
-    return () => {
-      active = false
-    }
+    return () => { active = false }
   }, [form.values.designationId])
 
   useEffect(() => {
@@ -169,11 +164,9 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
     projectAllocationService
       .getProjectDateWarnings(projectId, form.values.startDate, form.values.endDate)
       .then((result) => {
-        if (active && result.success) setDateWarnings(result.data)
+        if (active) setDateWarnings(result.success ? result.data : [])
       })
-    return () => {
-      active = false
-    }
+    return () => { active = false }
   }, [mode, projectId, form.values.startDate, form.values.endDate])
 
   const designationOptions = designations.map((designation) => ({
@@ -185,29 +178,38 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
     value: String(manager.id),
   }))
 
+  const requiredValuesPresent = useMemo(() => {
+    const percentageError = percentValidator(form.values.managerAllocationPercentage)
+    const effectiveDateValid = !showEffectiveDate || Boolean(
+      form.values.managerChangeEffectiveDate &&
+      (!form.values.startDate || form.values.managerChangeEffectiveDate >= form.values.startDate) &&
+      (!form.values.endDate || form.values.managerChangeEffectiveDate <= form.values.endDate),
+    )
+    return Boolean(
+      form.values.name.trim() &&
+      form.values.startDate &&
+      form.values.endDate &&
+      form.values.endDate >= form.values.startDate &&
+      form.values.designationId &&
+      form.values.managerId &&
+      !percentageError &&
+      form.values.clientName.trim() &&
+      form.values.clientCountry.trim() &&
+      form.values.clientEmail.trim() &&
+      effectiveDateValid,
+    )
+  }, [form.values, showEffectiveDate])
+
+  const hasBlockingErrors = Object.entries(form.errors).some(
+    ([field]) => field !== 'managerChangeEffectiveDate' || showEffectiveDate,
+  )
+
   const handleSubmit = () => {
     if (!form.validateAll()) return
-    if (!projectManagerRoleId) {
-      setReferenceError('An active Project Manager role is required to create or update a project.')
-      return
-    }
-    onSubmit({ ...form.values, projectRoleId: projectManagerRoleId })
-  }
-
-  const handleProjectStartDate = (value: string) => {
-    const previous = form.values.startDate
-    form.setValue('startDate', value)
-    if (mode === 'create' && (!form.values.allocationStartDate || form.values.allocationStartDate === previous)) {
-      form.setValue('allocationStartDate', value)
-    }
-  }
-
-  const handleProjectEndDate = (value: string) => {
-    const previous = form.values.endDate
-    form.setValue('endDate', value)
-    if (mode === 'create' && (!form.values.allocationEndDate || form.values.allocationEndDate === previous)) {
-      form.setValue('allocationEndDate', value)
-    }
+    onSubmit({
+      ...form.values,
+      managerChangeEffectiveDate: showEffectiveDate ? form.values.managerChangeEffectiveDate : '',
+    })
   }
 
   return (
@@ -223,7 +225,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
-              <p className="font-medium">Allocation dates require review.</p>
+              <p className="font-medium">Project dates require review.</p>
               {dateWarnings.map((warning) => <p key={warning} className="mt-1 text-xs">{warning}</p>)}
             </div>
           </div>
@@ -233,51 +235,23 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
       <Card title="Project Information">
         <div className="flex flex-col gap-5">
           <FormRow columns={1}>
-            <Input
-              label="Project Name"
-              name="name"
-              required
-              value={form.values.name}
-              error={form.touched.name ? form.errors.name : undefined}
-              onChange={(event) => form.setValue('name', event.target.value)}
-            />
+            <Input label="Project Name" name="name" required value={form.values.name} error={form.touched.name ? form.errors.name : undefined} onChange={(event) => form.setValue('name', event.target.value)} />
           </FormRow>
           <FormRow columns={1}>
-            <Input
-              label="Description"
-              name="description"
-              value={form.values.description}
-              onChange={(event) => form.setValue('description', event.target.value)}
-            />
+            <Input label="Description" name="description" value={form.values.description} onChange={(event) => form.setValue('description', event.target.value)} />
           </FormRow>
           <FormRow>
-            <Input
-              label="Start Date"
-              name="startDate"
-              type="date"
-              required
-              value={form.values.startDate}
-              error={form.touched.startDate ? form.errors.startDate : undefined}
-              onChange={(event) => handleProjectStartDate(event.target.value)}
-            />
-            <Input
-              label="End Date"
-              name="endDate"
-              type="date"
-              required
-              value={form.values.endDate}
-              error={form.touched.endDate ? form.errors.endDate : undefined}
-              onChange={(event) => handleProjectEndDate(event.target.value)}
-            />
+            <Input label="Start Date" name="startDate" type="date" required value={form.values.startDate} error={form.touched.startDate ? form.errors.startDate : undefined} onChange={(event) => form.setValue('startDate', event.target.value)} />
+            <Input label="End Date" name="endDate" type="date" required value={form.values.endDate} error={form.touched.endDate ? form.errors.endDate : undefined} onChange={(event) => form.setValue('endDate', event.target.value)} />
           </FormRow>
         </div>
       </Card>
 
-      <Card title="Project Manager Selection" subtitle="Select an active employee from the chosen designation.">
+      <Card title="Project Manager Selection" subtitle="The backend derives the manager allocation period from the Project dates.">
         <div className="flex flex-col gap-5">
           <FormRow columns={3}>
             <Dropdown
-              label="Designation"
+              label="Project Manager Designation"
               name="designationId"
               required
               options={designationOptions}
@@ -285,8 +259,10 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
               error={form.touched.designationId ? form.errors.designationId : undefined}
               disabled={isLoadingReferences}
               onChange={(event) => {
-                form.setValue('designationId', event.target.value)
-                form.setValue('managerId', '')
+                if (event.target.value !== form.values.designationId) {
+                  form.setValue('designationId', event.target.value)
+                  form.setValue('managerId', '')
+                }
               }}
             />
             <Dropdown
@@ -297,55 +273,50 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
               value={form.values.managerId}
               error={form.touched.managerId ? form.errors.managerId : undefined}
               disabled={isLoadingManagers || !form.values.designationId}
-              placeholder={
-                !form.values.designationId
-                  ? 'Select a designation first'
-                  : isLoadingManagers
-                    ? 'Loading project managers...'
-                    : availableManagers.length === 0
-                      ? 'No active employees found'
-                      : 'Select project manager...'
-              }
+              placeholder={!form.values.designationId ? 'Select a designation first' : isLoadingManagers ? 'Loading project managers...' : availableManagers.length === 0 ? 'No active employees found' : 'Select project manager...'}
               onChange={(event) => form.setValue('managerId', event.target.value)}
             />
             <Input
-              label="Allocation Percentage"
-              name="allocationPercentage"
+              label="Manager Allocation Percentage (%)"
+              name="managerAllocationPercentage"
               type="number"
               min={1}
               max={100}
+              step={1}
               required
-              value={form.values.allocationPercentage}
-              error={form.touched.allocationPercentage ? form.errors.allocationPercentage : undefined}
-              onChange={(event) => form.setValue('allocationPercentage', Number(event.target.value))}
-            />
-          </FormRow>
-          <FormRow>
-            <Input
-              label="Allocation Start Date"
-              name="allocationStartDate"
-              type="date"
-              required
-              disabled={mode === 'edit'}
-              value={form.values.allocationStartDate}
-              error={form.touched.allocationStartDate ? form.errors.allocationStartDate : undefined}
-              hint={mode === 'edit' ? 'The original allocation start date cannot be changed.' : undefined}
-              onChange={(event) => form.setValue('allocationStartDate', event.target.value)}
-            />
-            <Input
-              label="Allocation End Date"
-              name="allocationEndDate"
-              type="date"
-              required
-              value={form.values.allocationEndDate}
-              error={form.touched.allocationEndDate ? form.errors.allocationEndDate : undefined}
-              onChange={(event) => form.setValue('allocationEndDate', event.target.value)}
+              value={Number.isFinite(form.values.managerAllocationPercentage) ? form.values.managerAllocationPercentage : ''}
+              error={form.touched.managerAllocationPercentage ? form.errors.managerAllocationPercentage : undefined}
+              onChange={(event) => form.setValue('managerAllocationPercentage', event.target.value === '' ? Number.NaN : Number(event.target.value))}
             />
           </FormRow>
 
+          {mode === 'edit' && (currentManagerAllocationStartDate || currentManagerAllocationEndDate) && (
+            <div className="grid gap-4 rounded-lg border border-ink-100 bg-ink-50 p-4 text-sm sm:grid-cols-2">
+              <div><p className="text-xs text-ink-400">Current Allocation Start</p><p className="mt-1 font-medium text-ink-800">{formatDate(currentManagerAllocationStartDate)}</p></div>
+              <div><p className="text-xs text-ink-400">Current Allocation End</p><p className="mt-1 font-medium text-ink-800">{formatDate(currentManagerAllocationEndDate)}</p></div>
+            </div>
+          )}
+
+          {showEffectiveDate && (
+            <FormRow columns={1}>
+              <Input
+                label="Manager Change Effective Date"
+                name="managerChangeEffectiveDate"
+                type="date"
+                required
+                min={form.values.startDate || undefined}
+                max={form.values.endDate || undefined}
+                value={form.values.managerChangeEffectiveDate}
+                error={form.touched.managerChangeEffectiveDate ? form.errors.managerChangeEffectiveDate : undefined}
+                hint="The current manager allocation will end one day before this date, and the new allocation will begin on this date."
+                onChange={(event) => form.setValue('managerChangeEffectiveDate', event.target.value)}
+              />
+            </FormRow>
+          )}
+
           {managerError && <p className="text-sm text-signal-critical">{managerError}</p>}
           {!managerError && form.values.designationId && !isLoadingManagers && availableManagers.length === 0 && (
-            <p className="text-sm text-ink-500">No active employees are available for this designation.</p>
+            <p className="text-sm text-ink-500">No active employees found for this designation.</p>
           )}
         </div>
       </Card>
@@ -369,9 +340,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
           onSubmit={handleSubmit}
           submitLabel={mode === 'create' ? 'Create Project' : 'Save Changes'}
           isSubmitting={isSubmitting}
-          isSubmitDisabled={
-            isLoadingReferences || !projectManagerRoleId || (mode === 'edit' ? !form.canSubmit : false)
-          }
+          isSubmitDisabled={isSubmitting || isLoadingReferences || isLoadingManagers || !requiredValuesPresent || hasBlockingErrors || (mode === 'edit' && !form.isDirty)}
         />
       </div>
     </div>

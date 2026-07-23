@@ -175,7 +175,6 @@ export const ProjectsPage: React.FC = () => {
               <div className="flex items-start justify-between gap-3 border-b border-ink-100 px-4 py-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-[10px] font-semibold text-brand-600">{project.code}</span>
                     <Badge tone={statusTone(project.status)}>{statusLabel(project.status)}</Badge>
                   </div>
                   <h3 className="mt-2 truncate text-sm font-semibold text-ink-900" title={project.name}>{project.name}</h3>

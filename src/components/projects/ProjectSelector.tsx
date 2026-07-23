@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, FolderKanban, Search, X } from 'lucide-react'
+import React, { useEffect, useRef, useState } from 'react'
+import { Check, ChevronDown, FolderKanban } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Loader } from '@/components/common/Loader'
 import { useProject } from '@/hooks/useProject'
@@ -23,15 +23,6 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({ className }) =
     refreshProjects,
   } = useProject()
   const [isOpen, setIsOpen] = useState(false)
-  const [query, setQuery] = useState('')
-
-  const filteredProjects = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase()
-    if (!normalizedQuery) return activeProjects
-    return activeProjects.filter((project) =>
-      project.projectName.toLowerCase().includes(normalizedQuery),
-    )
-  }, [activeProjects, query])
 
   useEffect(() => {
     const closeOnOutsideClick = (event: MouseEvent) => {
@@ -40,10 +31,6 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({ className }) =
     document.addEventListener('mousedown', closeOnOutsideClick)
     return () => document.removeEventListener('mousedown', closeOnOutsideClick)
   }, [])
-
-  useEffect(() => {
-    if (!isOpen) setQuery('')
-  }, [isOpen])
 
   useEffect(() => {
     if (!selectedProject) return
@@ -88,7 +75,7 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({ className }) =
             : projectsError
               ? 'Unable to load projects'
             : selectedProject?.projectName ||
-              (hasActiveProjects ? 'Select a project' : 'No active projects available.')}
+              (hasActiveProjects ? 'Select a project' : 'No projects have been assigned to you.')}
         </span>
         {isLoadingProjects ? <Loader size="sm" /> : <ChevronDown className="h-4 w-4 shrink-0 text-ink-400" />}
       </button>
@@ -104,29 +91,13 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({ className }) =
             </div>
           ) : (
             <>
-              <div className="relative border-b border-ink-100 p-2">
-                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
-                <input
-                  autoFocus
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  onKeyDown={(event) => event.key === 'Escape' && setIsOpen(false)}
-                  placeholder="Search project name..."
-                  className="h-8 w-full rounded-md border border-ink-200 bg-white pl-9 pr-8 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400/40"
-                />
-                {query && (
-                  <button type="button" aria-label="Clear project search" onClick={() => setQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700">
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
               <div role="listbox" className="max-h-64 overflow-y-auto p-1">
-                {filteredProjects.length === 0 ? (
+                {activeProjects.length === 0 ? (
                   <p className="px-3 py-5 text-center text-xs text-ink-500">
-                    {hasActiveProjects ? 'No projects match your search.' : 'No active projects available.'}
+                    No projects have been assigned to you.
                   </p>
                 ) : (
-                  filteredProjects.map((project) => (
+                  activeProjects.map((project) => (
                     <button
                       key={project.projectId}
                       type="button"

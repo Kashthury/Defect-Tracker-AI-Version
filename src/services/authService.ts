@@ -51,6 +51,7 @@ const mapUser = (value: unknown): AuthenticatedUser | null => {
   const lastName = asString(user.lastName)
   return {
     id: asString(user.id, user.userId, user.employeeId),
+    isFirstUser: user.isFirstUser === true || user.firstUser === true,
     fullName: asString(user.fullName, user.name, `${firstName} ${lastName}`.trim(), user.email),
     email: asString(user.email, user.username),
     avatarColor: asString(user.avatarColor) || '#2563eb',
@@ -74,6 +75,7 @@ const mapSession = (value: unknown): AuthSession | null => {
   const token = asString(data.token, data.accessToken, data.access_token, data.jwtToken, data.jwt)
   const user = mapUser(data.user ?? data.employee ?? data.profile)
   if (!token || !user) return null
+  user.isFirstUser = user.isFirstUser || data.isFirstUser === true || data.firstUser === true
   const issuedAt = Date.now()
   const expiresIn = Number(data.expiresIn ?? data.expires_in ?? 0)
   return {

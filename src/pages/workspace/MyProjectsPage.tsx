@@ -15,7 +15,6 @@ export const MyProjectsPage: React.FC = () => {
     usePagination<Project>({ fetcher, initialPageSize: 10 })
 
   const columns: TableColumn<Project>[] = [
-    { key: 'code', header: 'Code', sortable: true, render: (r) => <span className="font-mono text-xs font-semibold text-brand-600">{r.code}</span>, width: '90px' },
     { key: 'name', header: 'Project', sortable: true, render: (r) => <span className="font-medium text-ink-800">{r.name}</span> },
     { key: 'managerName', header: 'Manager', sortable: true, render: (r) => r.managerName },
     { key: 'status', header: 'Status', sortable: true, render: (r) => <Badge tone={r.status === 'ACTIVE' ? 'success' : 'neutral'}>{r.status === 'ACTIVE' ? 'Active' : 'Inactive'}</Badge> },
