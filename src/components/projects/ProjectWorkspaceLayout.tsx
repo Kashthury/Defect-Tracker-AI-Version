@@ -4,7 +4,6 @@ import { ArrowLeft } from 'lucide-react'
 import { ErrorMessage } from '@/components/common/ErrorMessage'
 import { Loader } from '@/components/common/Loader'
 import { ROUTES } from '@/constants/routes'
-import { useAuth } from '@/hooks/useAuth'
 import { useProject } from '@/hooks/useProject'
 import { projectService } from '@/services/projectService'
 import { Project } from '@/types/project'
@@ -19,15 +18,30 @@ export const ProjectWorkspaceLayout: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
   const location = useLocation()
-  const { user } = useAuth()
-  const { setSelectedProject } = useProject()
+  const {
+    selectedProject,
+    activeProjects,
+    isLoadingProjects,
+    projectsError,
+    refreshProjects,
+    setSelectedProject,
+  } = useProject()
   const [project, setProject] = useState<Project | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const routeProject = activeProjects.find((item) => String(item.projectId) === String(projectId))
+  const isRouteSynchronized = Boolean(routeProject && String(selectedProject?.projectId) === String(routeProject.projectId))
+
+  useEffect(() => {
+    if (!routeProject || String(selectedProject?.projectId) === String(routeProject.projectId)) return
+    setSelectedProject(routeProject)
+  }, [routeProject, selectedProject?.projectId, setSelectedProject])
+
   const loadProject = useCallback(async () => {
-    if (!projectId || !user) return
+    if (!projectId || !routeProject || !isRouteSynchronized) return
     setIsLoading(true)
+    setProject(null)
     setError(null)
     try {
       const result = await projectService.getAuthorizedProjectById(projectId)
@@ -36,23 +50,21 @@ export const ProjectWorkspaceLayout: React.FC = () => {
         return
       }
       setProject(result.data)
-      setSelectedProject({
-        projectId: result.data.id,
-        projectName: result.data.name,
-        status: result.data.status,
-      })
     } catch {
       setError('An unexpected error occurred while loading the project workspace.')
     } finally {
       setIsLoading(false)
     }
-  }, [projectId, setSelectedProject, user])
+  }, [isRouteSynchronized, projectId, routeProject])
 
   useEffect(() => {
     loadProject()
   }, [loadProject])
 
-  if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader label="Loading project workspace..." /></div>
+  if (isLoadingProjects) return <div className="flex h-64 items-center justify-center"><Loader label="Loading accessible projects..." /></div>
+  if (projectsError) return <div className="py-12"><ErrorMessage message={projectsError} onRetry={refreshProjects} /></div>
+  if (!projectId || !routeProject) return <div className="py-12"><ErrorMessage message="You do not have access to this Project." /></div>
+  if (!isRouteSynchronized || isLoading) return <div className="flex h-64 items-center justify-center"><Loader label="Loading project workspace..." /></div>
   if (error || !project) return <div className="py-12"><ErrorMessage message={error || 'Project not found.'} onRetry={loadProject} /></div>
 
   const projectManagementPath = ROUTES.PROJECT_MANAGEMENT_HUB.replace(':projectId', project.id)

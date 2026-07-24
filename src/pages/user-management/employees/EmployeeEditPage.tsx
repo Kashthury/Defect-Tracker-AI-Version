@@ -57,7 +57,7 @@ export const EmployeeEditPage: React.FC = () => {
     if (employee.superUser && !form.values.active) { setSubmitError('The Super User cannot be deactivated.'); return }
     setIsSubmitting(true); setSubmitError(null); setEmailError('')
     const v = normalized(form.values)
-    const result = await employeeService.updateEmployee(id, { firstName: v.firstName, lastName: v.lastName, gender: v.gender as Gender, email: v.email, phoneNo: v.phoneNo, joinDate: v.joinDate, designationId: Number(v.designationId), active: employee.superUser ? true : v.active, profileImage, removeProfileImage })
+    const result = await employeeService.updateEmployee(id, { firstName: v.firstName, lastName: v.lastName, gender: v.gender as Gender, email: v.email, phoneNo: v.phoneNo, joinDate: v.joinDate, designationId: Number(v.designationId), active: employee.superUser ? true : v.active, profileImage, removeProfileImage, existingProfileImage: employee.profileImage })
     setIsSubmitting(false)
     if (!result.success) { if (result.message.toLowerCase().includes('email')) setEmailError(result.message); else setSubmitError(result.message); return }
     toast.success(result.message); navigate(ROUTES.EMPLOYEE_DETAIL.replace(':id', id))

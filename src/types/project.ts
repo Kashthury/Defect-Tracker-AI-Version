@@ -1,4 +1,12 @@
 export type ProjectStatus = 'ACTIVE' | 'ON_HOLD' | 'COMPLETED'
+
+export interface ProjectCompletionCheck {
+  canComplete: boolean
+  incompleteReleaseCount: number
+  pendingTestCaseCount: number
+  unresolvedDefectCount: number
+  blockers: string[]
+}
 export type AllocationDisplayStatus = 'SCHEDULED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
 export type ProjectAllocationStatus = AllocationDisplayStatus | 'CLOSED'
 export type ProjectAllocationType = 'PROJECT_MANAGER' | 'TEAM_MEMBER'

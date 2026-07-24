@@ -5,7 +5,7 @@ export const useProjectScope = () => {
   const { projectId: routeProjectId } = useParams<{ projectId: string }>()
   const { selectedProject, activeProjects } = useProject()
   const selectedProjectId = activeProjects.some(
-    (project) => project.projectId === selectedProject?.projectId,
+    (project) => String(project.projectId) === String(selectedProject?.projectId),
   )
     ? selectedProject?.projectId
     : undefined

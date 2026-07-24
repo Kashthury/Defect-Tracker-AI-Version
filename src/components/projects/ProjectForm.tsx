@@ -303,7 +303,14 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
               error={form.touched.managerId ? form.errors.managerId : undefined}
               disabled={isLoadingManagers || !form.values.designationId}
               placeholder={!form.values.designationId ? 'Select a designation first' : isLoadingManagers ? 'Loading project managers...' : availableManagers.length === 0 ? 'No active employees found' : 'Select project manager...'}
-              onChange={(event) => form.setValue('managerId', event.target.value)}
+              onChange={(event) => {
+                const managerId = event.target.value
+                form.setValue('managerId', managerId)
+                const manager = availableManagers.find((item) => String(item.id) === managerId)
+                if (manager) {
+                  form.setValue('managerAllocationPercentage', manager.maxAllocationPercentage ?? manager.availablePercentage ?? 100)
+                }
+              }}
             />
             <Input
               label="Manager Allocation Percentage (%)"
@@ -316,6 +323,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
               value={Number.isFinite(form.values.managerAllocationPercentage) ? form.values.managerAllocationPercentage : ''}
               error={form.touched.managerAllocationPercentage ? form.errors.managerAllocationPercentage : undefined}
               onChange={(event) => form.setValue('managerAllocationPercentage', event.target.value === '' ? Number.NaN : Number(event.target.value))}
+              hint="Defaults to the selected employee's maximum available allocation."
             />
           </FormRow>
 

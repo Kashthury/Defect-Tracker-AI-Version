@@ -1,14 +1,6 @@
-import { mockReleaseTestCases } from '@/mock/releaseTestCases'
-import { mockReleases } from '@/mock/releases'
-import { mockSubmodules } from '@/mock/moduleManagement'
-import { mockProjectAllocations } from '@/mock/projectAllocations'
-import { mockRoles } from '@/mock/roles'
-import { mockEmployeeRecords } from '@/mock/employees'
-import { mockPriorities } from '@/mock/configuration'
-import { mockDefects } from '@/mock/defects'
-import { allocateDefectNumber, defectService } from './defectService'
 import { ApiResponse, Page, PageRequest } from '@/types/common'
 import { DefectRecord } from '@/types/defect'
+import { ReleaseRecord } from '@/types/release'
 import {
   EligibleSubmoduleDeveloper,
   FailReleaseTestCasePayload,
@@ -19,95 +11,114 @@ import {
   ReleaseTestCaseExecutionSummary,
   ReleaseTestCaseRecord,
 } from '@/types/releaseTestCase'
-import { fail, mockDelay, ok, paginate } from './apiClient'
+import { apiRequest, fail, ok } from './apiClient'
+import { defectService } from './defectService'
+import { employeeService } from './employeeService'
+import { moduleManagementService } from './moduleManagementService'
+import { releaseService } from './releaseService'
+import { mapReleaseTestCase } from './releaseTestCaseService'
 
-/** Conceptual outbound-email log for the DEFECT_ASSIGNED notification trigger. */
-export const mockDefectAssignedEmailLog: { defectId: string; defectNo: string; assignedToId: string; sentAt: string }[] = []
-
-function baseScope(projectId: string, releaseId: string): ReleaseTestCaseRecord[] {
-  return mockReleaseTestCases.filter((r) => r.projectId === projectId && r.releaseId === releaseId && r.active)
+type Json = Record<string, any>
+type BackendPage = {
+  content?: Json[]
+  items?: Json[]
+  pageNumber?: number
+  pageSize?: number
+  number?: number
+  size?: number
+  totalElements?: number
+  totalItems?: number
+  totalPages?: number
 }
 
-function applyFilters(rows: ReleaseTestCaseRecord[], filters: ReleaseTestCaseExecutionFilters | undefined, search: string | undefined): ReleaseTestCaseRecord[] {
-  let result = rows
-  if (search && search.trim()) {
-    const term = search.trim().toLowerCase()
-    result = result.filter((r) => r.testCaseKey.toLowerCase().includes(term) || r.description.toLowerCase().includes(term))
+const endpoint = (projectId: string) =>
+  `/projects/${encodeURIComponent(projectId)}/testcase-allocations`
+
+const query = (
+  releaseId: string,
+  filters: ReleaseTestCaseExecutionFilters,
+  request: PageRequest,
+  assignedQaId?: string,
+) => ({
+  releaseId,
+  search: request.search?.trim() || undefined,
+  moduleId: filters.moduleId || undefined,
+  submoduleId: filters.submoduleId || undefined,
+  defectTypeId: filters.defectTypeId || undefined,
+  severityId: filters.severityId || undefined,
+  executionStatus: filters.status || undefined,
+  assignedQaId: assignedQaId || filters.assignedQaId || undefined,
+  defectCreated: filters.defectCreated || undefined,
+  defectNo: filters.defectNo?.trim() || undefined,
+  pageNumber: request.pageNumber,
+  pageSize: request.pageSize,
+  sortBy: request.sortBy,
+  sortDir: request.sortDir,
+})
+
+const mapPage = (projectId: string, source: BackendPage | Json[], request: PageRequest): Page<ReleaseTestCaseRecord> => {
+  const content = Array.isArray(source) ? source : source.content ?? source.items ?? []
+  const pageSize = Array.isArray(source) ? request.pageSize : source.pageSize ?? source.size ?? request.pageSize
+  const pageNumber = Array.isArray(source) ? request.pageNumber : source.pageNumber ?? source.number ?? request.pageNumber
+  const totalElements = Array.isArray(source) ? content.length : source.totalElements ?? source.totalItems ?? content.length
+  return {
+    content: content.map((item) => mapReleaseTestCase(item, projectId)),
+    pageNumber,
+    pageSize,
+    totalElements,
+    totalPages: Array.isArray(source)
+      ? Math.max(1, Math.ceil(totalElements / pageSize))
+      : source.totalPages ?? Math.max(1, Math.ceil(totalElements / pageSize)),
   }
-  if (!filters) return result
-  if (filters.moduleId) result = result.filter((r) => r.moduleId === filters.moduleId)
-  if (filters.submoduleId) result = result.filter((r) => r.submoduleId === filters.submoduleId)
-  if (filters.defectTypeId) result = result.filter((r) => r.defectTypeId === filters.defectTypeId)
-  if (filters.severityId) result = result.filter((r) => r.severityId === filters.severityId)
-  if (filters.status) result = result.filter((r) => r.status === filters.status)
-  if (filters.assignedQaId) result = result.filter((r) => r.assignedQaId === filters.assignedQaId)
-  if (filters.defectCreated === 'YES') result = result.filter((r) => Boolean(r.defectId))
-  if (filters.defectCreated === 'NO') result = result.filter((r) => !r.defectId)
-  if (filters.defectNo && filters.defectNo.trim()) {
-    const term = filters.defectNo.trim().toLowerCase()
-    result = result.filter((r) => (r.defectNo ?? '').toLowerCase().includes(term))
-  }
-  return result
 }
 
-function toPage(rows: ReleaseTestCaseRecord[], request: PageRequest): Page<ReleaseTestCaseRecord> {
-  // Search/filters are already applied above; hand the pre-filtered rows to the
-  // generic paginator purely for sort + slice so behaviour matches every other list.
-  return paginate(rows, { ...request, search: '', filters: {} }, [])
+const list = async (
+  projectId: string,
+  releaseId: string,
+  filters: ReleaseTestCaseExecutionFilters,
+  request: PageRequest,
+  assignedQaId?: string,
+): Promise<ApiResponse<Page<ReleaseTestCaseRecord>>> => {
+  const response = await apiRequest<BackendPage | Json[]>(endpoint(projectId), {
+    query: query(releaseId, filters, request, assignedQaId),
+  })
+  return response.success ? ok(mapPage(projectId, response.data, request), response.message) : fail(response.message)
 }
 
-function eligibleSubmoduleDevelopers(projectId: string, submoduleId: string, executionDate: string): EligibleSubmoduleDeveloper[] {
-  const submodule = mockSubmodules.find((s) => s.id === submoduleId && s.projectId === projectId)
-  if (!submodule) return []
-  const ids = new Set(submodule.developerEmployeeIds)
-  return mockProjectAllocations
-    .filter((a) => a.projectId === projectId && a.status === 'ACTIVE' && ids.has(a.employeeId))
-    .filter((a) => a.startDate <= executionDate && a.endDate >= executionDate)
-    .map((a) => {
-      const role = mockRoles.find((r) => r.id === a.roleId)
-      const employee = mockEmployeeRecords.find((e) => e.id === a.employeeId)
-      if (!role || role.roleType !== 'DEVELOPER' || !employee || employee.status !== 'ACTIVE') return null
-      return {
-        employeeId: employee.id,
-        employeeName: `${employee.firstName} ${employee.lastName}`,
-        roleName: role.name,
-        allocationPercentage: a.allocationPercentage,
-        startDate: a.startDate,
-        endDate: a.endDate,
-      }
-    })
-    .filter((item): item is EligibleSubmoduleDeveloper => Boolean(item))
-}
+const loadAll = (
+  projectId: string,
+  releaseId: string,
+  assignedQaId?: string,
+) => list(projectId, releaseId, {}, { pageNumber: 0, pageSize: 1000 }, assignedQaId)
 
 export const releaseTestCaseExecutionService = {
-  /** The ACTIVE release for a project, or null when none exists — execution is gated on this. */
-  async getActiveRelease(projectId: string) {
-    await mockDelay(150)
-    const release = mockReleases.find((r) => r.projectId === projectId && r.status === 'ACTIVE')
-    return ok(release ? { ...release } : null)
+  async getActiveRelease(projectId: string): Promise<ApiResponse<ReleaseRecord | null>> {
+    const response = await releaseService.getReleases({
+      pageNumber: 0,
+      pageSize: 100,
+      filters: { projectId, status: 'ACTIVE' },
+    })
+    if (!response.success) return fail(response.message)
+    return ok(response.data.content.find((release) => release.status === 'ACTIVE') ?? null, response.message)
   },
 
-  async getMyReleaseTestCaseExecutions(
+  getMyReleaseTestCaseExecutions(
     projectId: string,
     releaseId: string,
     employeeId: string,
     filters: ReleaseTestCaseExecutionFilters,
     request: PageRequest,
-  ): Promise<ApiResponse<Page<ReleaseTestCaseRecord>>> {
-    await mockDelay()
-    const scoped = baseScope(projectId, releaseId).filter((r) => r.assignedQaId === employeeId)
-    return ok(toPage(applyFilters(scoped, filters, request.search), request))
+  ) {
+    return list(projectId, releaseId, filters, request, employeeId)
   },
 
-  async getAllReleaseTestCaseExecutions(
+  getAllReleaseTestCaseExecutions(
     projectId: string,
     releaseId: string,
     filters: ReleaseTestCaseExecutionFilters,
     request: PageRequest,
-  ): Promise<ApiResponse<Page<ReleaseTestCaseRecord>>> {
-    await mockDelay()
-    const scoped = baseScope(projectId, releaseId)
-    return ok(toPage(applyFilters(scoped, filters, request.search), request))
+  ) {
+    return list(projectId, releaseId, filters, request)
   },
 
   async getReleaseTestCaseExecutionCounts(
@@ -115,154 +126,99 @@ export const releaseTestCaseExecutionService = {
     releaseId: string,
     employeeId: string,
   ): Promise<ApiResponse<ReleaseTestCaseExecutionCounts>> {
-    await mockDelay(120)
-    const scoped = baseScope(projectId, releaseId)
-    return ok({
-      myTestCases: scoped.filter((r) => r.assignedQaId === employeeId).length,
-      allTestCases: scoped.length,
-    })
+    const [mine, all] = await Promise.all([
+      loadAll(projectId, releaseId, employeeId),
+      loadAll(projectId, releaseId),
+    ])
+    if (!mine.success) return fail(mine.message)
+    if (!all.success) return fail(all.message)
+    return ok({ myTestCases: mine.data.totalElements, allTestCases: all.data.totalElements }, all.message)
   },
 
-  /**
-   * Additive, read-only dashboard summary for the Execution page header
-   * cards. Reuses the same scoping rules as the existing counts endpoint —
-   * it does not alter any existing method, validation, or contract.
-   */
   async getReleaseTestCaseExecutionSummary(
     projectId: string,
     releaseId: string,
     employeeId: string,
   ): Promise<ApiResponse<ReleaseTestCaseExecutionSummary>> {
-    await mockDelay(120)
-    const scoped = baseScope(projectId, releaseId)
+    const response = await loadAll(projectId, releaseId)
+    if (!response.success) return fail(response.message)
+    const items = response.data.content
     return ok({
-      total: scoped.length,
-      myAssigned: scoped.filter((r) => r.assignedQaId === employeeId).length,
-      notStarted: scoped.filter((r) => r.status === 'NOT_STARTED').length,
-      passed: scoped.filter((r) => r.status === 'PASSED').length,
-      failed: scoped.filter((r) => r.status === 'FAILED').length,
-      defectsCreated: scoped.filter((r) => Boolean(r.defectId)).length,
-    })
+      total: response.data.totalElements,
+      myAssigned: items.filter((item) => item.assignedQaId === employeeId).length,
+      notStarted: items.filter((item) => item.status === 'NOT_STARTED').length,
+      passed: items.filter((item) => item.status === 'PASSED').length,
+      failed: items.filter((item) => item.status === 'FAILED').length,
+      defectsCreated: items.filter((item) => Boolean(item.defectId)).length,
+    }, response.message)
   },
 
   async patchReleaseTestCaseStatus(
+    projectId: string,
     releaseTestCaseId: string,
     payload: PatchReleaseTestCaseStatusPayload,
   ): Promise<ApiResponse<ReleaseTestCaseRecord>> {
-    await mockDelay(350)
-    const index = mockReleaseTestCases.findIndex((r) => r.id === releaseTestCaseId && r.active)
-    if (index === -1) return fail('This test case allocation was not found.')
-    const current = mockReleaseTestCases[index]
-    if (current.version !== payload.version) return fail('This record was updated elsewhere. Refresh and try again.')
-    if (current.assignedQaId !== payload.executedBy) return fail('Only the QA assigned to this allocation may execute it.')
-    if (current.status !== 'NOT_STARTED') return fail(`A ${current.status} test case cannot be marked PASSED.`)
-
-    const executor = mockEmployeeRecords.find((e) => e.id === payload.executedBy)
-    const updated: ReleaseTestCaseRecord = {
-      ...current,
-      status: 'PASSED',
-      executedById: payload.executedBy,
-      executedByName: executor ? `${executor.firstName} ${executor.lastName}` : current.assignedQaName,
-      executedDate: new Date().toISOString().slice(0, 10),
-      version: current.version + 1,
-      updatedAt: new Date().toISOString(),
-    }
-    mockReleaseTestCases[index] = updated
-    return ok({ ...updated }, `${updated.testCaseKey} marked PASSED.`)
+    const response = await apiRequest<Json>(
+      `${endpoint(projectId)}/${encodeURIComponent(releaseTestCaseId)}/status`,
+      {
+        method: 'PATCH',
+        body: { status: payload.status, version: payload.version },
+      },
+    )
+    return response.success
+      ? ok(mapReleaseTestCase(response.data, projectId), response.message)
+      : fail(response.message)
   },
 
   async getEligibleSubmoduleDevelopers(
     projectId: string,
     submoduleId: string,
-    executionDate: string = new Date().toISOString().slice(0, 10),
   ): Promise<ApiResponse<EligibleSubmoduleDeveloper[]>> {
-    await mockDelay(150)
-    return ok(eligibleSubmoduleDevelopers(projectId, submoduleId, executionDate))
+    const [submodules, developers] = await Promise.all([
+      moduleManagementService.getSubmodules(projectId),
+      employeeService.getProjectDevelopers(projectId),
+    ])
+    if (!submodules.success) return fail(submodules.message)
+    if (!developers.success) return fail(developers.message)
+    const submodule = submodules.data.find((item) => item.id === submoduleId)
+    if (!submodule) return fail('Submodule not found.')
+    const assignedIds = new Set(submodule.developerEmployeeIds)
+    return ok(developers.data
+      .filter((employee) => assignedIds.has(String(employee.id)))
+      .map((employee) => ({
+        employeeId: String(employee.id),
+        employeeName: employee.fullName,
+        roleName: employee.designationName || 'Developer',
+        allocationPercentage: 0,
+        startDate: '',
+        endDate: '',
+      })), developers.message)
   },
 
   async failReleaseTestCaseAndCreateDefect(
+    projectId: string,
     releaseTestCaseId: string,
     payload: FailReleaseTestCasePayload,
   ): Promise<ApiResponse<FailReleaseTestCaseResult>> {
-    await mockDelay(500)
-    const index = mockReleaseTestCases.findIndex((r) => r.id === releaseTestCaseId && r.active)
-    if (index === -1) return fail('This test case allocation was not found.')
-    const current = mockReleaseTestCases[index]
-
-    const release = mockReleases.find((r) => r.id === current.releaseId && r.projectId === current.projectId)
-    if (!release || release.status !== 'ACTIVE') return fail('This allocation does not belong to the currently ACTIVE release.')
-    if (current.version !== payload.version) return fail('This record was updated elsewhere. Refresh and try again.')
-    if (current.assignedQaId !== payload.executedBy) return fail('Only the QA assigned to this allocation may execute it.')
-    if (current.status === 'FAILED') return fail('This test case has already failed and a defect has already been created.')
-    if (current.defectId) return fail('A defect is already linked to this allocation.')
-
-    const priority = mockPriorities.find((p) => p.id === payload.priorityId && p.active)
-    if (!priority) return fail('Select a valid Priority.')
-
-    const executionDate = new Date().toISOString().slice(0, 10)
-    const developer = eligibleSubmoduleDevelopers(current.projectId, current.submoduleId, executionDate).find(
-      (d) => d.employeeId === payload.assignedToId,
+    const body = new FormData()
+    body.append('priorityId', String(Number(payload.priorityId)))
+    body.append('assignedToId', String(Number(payload.assignedToId)))
+    body.append('version', String(payload.version))
+    if (payload.attachment) body.append('attachment', payload.attachment, payload.attachment.name)
+    const response = await apiRequest<Json>(
+      `${endpoint(projectId)}/${encodeURIComponent(releaseTestCaseId)}/fail`,
+      { method: 'POST', body },
     )
-    if (!developer) return fail('Select a Developer who is assigned to this Submodule and actively allocated to the project.')
-
-    // All validations passed — commit the transaction: create the Defect, link it, then flip the allocation to FAILED.
-    const { id: defectId, defectNo } = allocateDefectNumber(current.projectId)
-    const now = new Date().toISOString()
-    const defect: DefectRecord = {
-      id: defectId,
-      defectNo,
-      projectId: current.projectId,
-      moduleId: current.moduleId,
-      moduleName: current.moduleName,
-      submoduleId: current.submoduleId,
-      submoduleName: current.submoduleName,
-      defectTypeId: current.defectTypeId,
-      defectTypeName: current.defectTypeName,
-      severityId: current.severityId,
-      severityName: current.severityName,
-      severityColor: current.severityColor,
-      priorityId: priority.id,
-      priorityName: priority.name,
-      priorityColor: priority.color,
-      releaseId: release.id,
-      releaseName: release.name,
-      description: current.description,
-      recreationSteps: current.steps,
-      attachmentName: payload.attachmentName ?? current.attachmentName,
-      statusCode: 'NEW',
-      statusName: 'New',
-      assignedToId: developer.employeeId,
-      assignedToName: developer.employeeName,
-      enteredById: payload.executedBy,
-      enteredByName: current.assignedQaName ?? payload.executedBy,
-      testCaseRequired: true,
-      linkedTestCaseId: current.testCaseId,
-      linkedTestCaseNo: current.testCaseKey,
-      createdAt: now,
-      updatedAt: now,
-    }
-    mockDefects.unshift(defect)
-    mockDefectAssignedEmailLog.push({ defectId: defect.id, defectNo: defect.defectNo, assignedToId: developer.employeeId, sentAt: now })
-
-    const updated: ReleaseTestCaseRecord = {
-      ...current,
-      status: 'FAILED',
-      executedById: payload.executedBy,
-      executedByName: current.assignedQaName,
-      executedDate: executionDate,
-      defectId: defect.id,
-      defectNo: defect.defectNo,
-      defectAssignedToId: developer.employeeId,
-      defectAssignedToName: developer.employeeName,
-      version: current.version + 1,
-      updatedAt: now,
-    }
-    mockReleaseTestCases[index] = updated
-
-    return ok({ allocation: { ...updated }, defectId: defect.id, defectNo: defect.defectNo }, `${updated.testCaseKey} marked FAILED and ${defect.defectNo} created.`)
+    if (!response.success) return fail(response.message)
+    const allocationSource = response.data.allocation ?? response.data.releaseTestCaseAllocation ?? response.data
+    return ok({
+      allocation: mapReleaseTestCase(allocationSource, projectId),
+      defectId: String(response.data.defectId ?? allocationSource.defectId ?? ''),
+      defectNo: String(response.data.defectNo ?? allocationSource.defectNo ?? ''),
+    }, response.message)
   },
 
-  async getDefectDetails(projectId: string, defectId: string): Promise<ApiResponse<DefectRecord>> {
+  getDefectDetails(projectId: string, defectId: string): Promise<ApiResponse<DefectRecord>> {
     return defectService.getDefectById(projectId, defectId)
   },
 }

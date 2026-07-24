@@ -63,7 +63,7 @@ const PersonPicker: React.FC<{
     if (!result.success) setSaveError(result.message || 'The team assignment was not saved. Please try again.')
   }
   return (
-    <div className="space-y-3">
+  <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div><div className="flex items-center gap-2 text-sm font-semibold text-ink-900">{icon}{title}</div><p className="mt-1 text-xs text-ink-500">{selected.length} currently assigned · {draft.length} selected</p></div>
         <div className="flex gap-1">

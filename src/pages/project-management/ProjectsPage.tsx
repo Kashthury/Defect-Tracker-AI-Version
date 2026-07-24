@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CalendarDays, Edit, Eye, Plus, Search as SearchIcon, Trash2, Users, X } from 'lucide-react'
+import { AlertTriangle, CalendarDays, Edit, Eye, FolderKanban, Plus, Search as SearchIcon, Trash2, Users, X } from 'lucide-react'
 import { Badge } from '@/components/common/Badge'
 import { Button } from '@/components/common/Button'
 import { Dropdown } from '@/components/common/Dropdown'
@@ -20,8 +20,9 @@ import { useAuth } from '@/hooks/useAuth'
 import { usePagination } from '@/hooks/usePagination'
 import { useProject } from '@/hooks/useProject'
 import { projectService } from '@/services/projectService'
-import { Project, ProjectStatus } from '@/types/project'
+import { Project, ProjectCompletionCheck, ProjectStatus } from '@/types/project'
 import { formatDate } from '@/utils/format'
+import { cn } from '@/utils/cn'
 
 const STATUS_OPTIONS = [
   { label: 'Active', value: 'ACTIVE' },
@@ -31,6 +32,16 @@ const STATUS_OPTIONS = [
 
 const statusLabel = (status: ProjectStatus) => STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status
 const statusTone = (status: ProjectStatus) => status === 'ACTIVE' ? 'success' : status === 'ON_HOLD' ? 'medium' : 'neutral'
+const nextCalendarDate = (date: string) => {
+  const value = new Date(`${date}T00:00:00`)
+  value.setDate(value.getDate() + 1)
+  return value.toISOString().slice(0, 10)
+}
+const projectCardTheme = (status: ProjectStatus) => status === 'ACTIVE'
+  ? { accent: 'bg-emerald-500', header: 'from-emerald-50 via-white to-white', icon: 'bg-emerald-100 text-emerald-700', border: 'hover:border-emerald-300' }
+  : status === 'ON_HOLD'
+    ? { accent: 'bg-amber-400', header: 'from-amber-50 via-white to-white', icon: 'bg-amber-100 text-amber-700', border: 'hover:border-amber-300' }
+    : { accent: 'bg-slate-400', header: 'from-slate-100 via-white to-white', icon: 'bg-slate-200 text-slate-600', border: 'hover:border-slate-400' }
 
 export const ProjectsPage: React.FC = () => {
   const navigate = useNavigate()
@@ -45,9 +56,14 @@ export const ProjectsPage: React.FC = () => {
   const [endDateTo, setEndDateTo] = useState('')
   const [managerOptions, setManagerOptions] = useState<{ label: string; value: string }[]>([])
   const [completionTarget, setCompletionTarget] = useState<Project | null>(null)
-  const [completionDate, setCompletionDate] = useState('')
+  const [completionCheck, setCompletionCheck] = useState<ProjectCompletionCheck | null>(null)
   const [completionError, setCompletionError] = useState<string | undefined>()
   const [isCompleting, setIsCompleting] = useState(false)
+  const [extensionTarget, setExtensionTarget] = useState<Project | null>(null)
+  const [extensionEndDate, setExtensionEndDate] = useState('')
+  const [extensionError, setExtensionError] = useState<string | undefined>()
+  const [isExtending, setIsExtending] = useState(false)
+  const [statusChangingId, setStatusChangingId] = useState<string | null>(null)
 
   useEffect(() => {
     projectService.getProjectManagerOptions().then((result) => {
@@ -82,11 +98,50 @@ export const ProjectsPage: React.FC = () => {
     navigate(ROUTES.PROJECT_MANAGEMENT_HUB.replace(':projectId', project.id))
   }
 
+  const refreshAfterStatusChange = async (projectId: string) => {
+    const [details] = await Promise.all([projectService.getProjectById(projectId), refreshProjects()])
+    if (details.success && selectedProject?.projectId === projectId && details.data.status === 'ACTIVE') {
+      setSelectedProject({ projectId: details.data.id, projectName: details.data.name, status: details.data.status })
+    }
+    window.dispatchEvent(new CustomEvent('project:data-changed', { detail: { projectId } }))
+    reload()
+  }
+
+  const runStatusChange = async (project: Project, nextStatus: ProjectStatus, retryAfterExtension = false) => {
+    setStatusChangingId(project.id)
+    const result = await projectService.updateProjectStatus(project.id, nextStatus)
+    setStatusChangingId(null)
+    if (result.success) {
+      toast.success(result.message)
+      setExtensionTarget(null)
+      await refreshAfterStatusChange(project.id)
+      return true
+    }
+    const endDatePassed = nextStatus === 'ACTIVE'
+      && /end date|ended|expired|past/i.test(result.message)
+    if (endDatePassed && !retryAfterExtension) {
+      setExtensionTarget(project)
+      setExtensionEndDate('')
+      setExtensionError(result.message)
+      return false
+    }
+    toast.error(result.message)
+    return false
+  }
+
   const handleStatusChange = async (project: Project, nextStatus: ProjectStatus) => {
     if (nextStatus === project.status) return
+    if (project.status === 'COMPLETED') return
     if (nextStatus === 'COMPLETED') {
+      setStatusChangingId(project.id)
+      const result = await projectService.checkProjectCompletion(project.id)
+      setStatusChangingId(null)
+      if (!result.success) {
+        toast.error(result.message)
+        return
+      }
       setCompletionTarget(project)
-      setCompletionDate(project.endDate)
+      setCompletionCheck(result.data)
       setCompletionError(undefined)
       return
     }
@@ -99,28 +154,13 @@ export const ProjectsPage: React.FC = () => {
       variant: 'primary',
     })
     if (!confirmed) return
-    const result = await projectService.updateProjectStatus(project.id, nextStatus)
-    if (result.success) {
-      toast.success(result.message)
-      await refreshProjects()
-      if (selectedProject?.projectId === project.id) {
-        setSelectedProject({ projectId: project.id, projectName: project.name, status: nextStatus })
-      }
-      reload()
-    } else toast.error(result.message)
+    await runStatusChange(project, nextStatus)
   }
 
   const completeProject = async () => {
-    if (!completionTarget || !completionDate) {
-      setCompletionError('Effective Completion Date is required.')
-      return
-    }
-    if (completionDate < completionTarget.startDate) {
-      setCompletionError('Effective Completion Date cannot be before Project Start Date.')
-      return
-    }
+    if (!completionTarget || !completionCheck?.canComplete || isCompleting) return
     setIsCompleting(true)
-    const result = await projectService.updateProjectStatus(completionTarget.id, 'COMPLETED', completionDate)
+    const result = await projectService.updateProjectStatus(completionTarget.id, 'COMPLETED')
     setIsCompleting(false)
     if (!result.success) {
       setCompletionError(result.message)
@@ -128,9 +168,33 @@ export const ProjectsPage: React.FC = () => {
     }
     toast.success(result.message)
     setCompletionTarget(null)
-    await refreshProjects()
-    if (selectedProject?.projectId === result.data.id) clearSelectedProject()
-    reload()
+    setCompletionCheck(null)
+    if (selectedProject?.projectId === completionTarget.id) clearSelectedProject()
+    await refreshAfterStatusChange(completionTarget.id)
+  }
+
+  const extendProjectEndDate = async () => {
+    if (!extensionTarget || isExtending) return
+    if (!extensionEndDate) {
+      setExtensionError('New End Date is required.')
+      return
+    }
+    if (extensionEndDate <= extensionTarget.endDate) {
+      setExtensionError('New End Date must be later than the current Project End Date.')
+      return
+    }
+    setIsExtending(true)
+    const result = await projectService.extendProjectEndDate(extensionTarget.id, extensionEndDate)
+    setIsExtending(false)
+    if (!result.success) {
+      setExtensionError(result.message)
+      return
+    }
+    toast.success(result.message)
+    const updatedProject = { ...extensionTarget, endDate: extensionEndDate }
+    await refreshAfterStatusChange(extensionTarget.id)
+    setExtensionError(undefined)
+    await runStatusChange(updatedProject, 'ACTIVE', true)
   }
 
   const handleDelete = async (project: Project) => {
@@ -202,26 +266,32 @@ export const ProjectsPage: React.FC = () => {
         <div className="rounded-lg border border-ink-200 bg-white py-12 shadow-panel"><EmptyState title="No projects found" description="Try adjusting your search or filters." /></div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {page.content.map((project) => (
+          {page.content.map((project) => {
+            const theme = projectCardTheme(project.status)
+            return (
             <article
               key={project.id}
               onClick={() => openProject(project)}
-              className="cursor-pointer rounded-xl border border-ink-300 bg-white shadow-panel transition-all hover:border-brand-400 hover:shadow-md"
+              className={cn('group cursor-pointer overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-panel transition-all duration-200 hover:-translate-y-0.5 hover:shadow-floating/50', theme.border)}
             >
-              <div className="flex items-start justify-between gap-3 border-b border-ink-100 px-4 py-4">
-                <div className="min-w-0">
+              <div className={cn('h-1.5', theme.accent)} />
+              <div className={cn('flex items-start justify-between gap-3 border-b border-ink-100 bg-gradient-to-r px-4 py-4', theme.header)}>
+                <div className="flex min-w-0 gap-3">
+                  <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', theme.icon)}><FolderKanban className="h-5 w-5" /></div>
+                  <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <Badge tone={statusTone(project.status)}>{statusLabel(project.status)}</Badge>
                   </div>
-                  <h3 className="mt-2 truncate text-sm font-semibold text-ink-900" title={project.name}>{project.name}</h3>
+                  <h3 className="mt-2 truncate text-base font-semibold text-ink-900" title={project.name}>{project.name}</h3>
                   <p className="mt-1 line-clamp-2 min-h-10 text-xs leading-5 text-ink-500">{project.description || 'No description provided.'}</p>
+                  </div>
                 </div>
                 <div onClick={(event) => event.stopPropagation()}>
-                  {hasPrivilege(PRIV.PROJECT_STATUS_CHANGE) && <Dropdown aria-label={`Change ${project.name} status`} value={project.status} options={STATUS_OPTIONS} onChange={(event) => void handleStatusChange(project, event.target.value as ProjectStatus)} className="min-w-[132px] border-brand-200 bg-brand-50 font-semibold text-brand-700" />}
+                  {hasPrivilege(PRIV.PROJECT_STATUS_CHANGE) && <Dropdown aria-label={`Change ${project.name} status`} disabled={project.status === 'COMPLETED' || statusChangingId === project.id} value={project.status} options={project.status === 'COMPLETED' ? STATUS_OPTIONS.filter((option) => option.value === 'COMPLETED') : STATUS_OPTIONS} onChange={(event) => void handleStatusChange(project, event.target.value as ProjectStatus)} className="min-w-[132px] border-brand-200 bg-brand-50 font-semibold text-brand-700" />}
                 </div>
               </div>
 
-              <div className="grid gap-x-4 gap-y-3 px-4 py-4 text-xs sm:grid-cols-2">
+              <div className="grid gap-3 bg-gradient-to-b from-white to-ink-50/40 px-4 py-4 text-xs sm:grid-cols-2">
                 <div><p className="text-ink-400">Client</p><p className="mt-1 truncate font-medium text-ink-700" title={project.clientName}>{project.clientName}</p></div>
                 <div><p className="text-ink-400">Project Manager</p><p className="mt-1 truncate font-medium text-ink-700" title={project.managerName}>{project.managerName}</p></div>
                 <div><p className="text-ink-400">Start Date</p><p className="mt-1 flex items-center gap-1.5 text-ink-700"><CalendarDays className="h-3.5 w-3.5 text-ink-400" />{formatDate(project.startDate)}</p></div>
@@ -230,13 +300,13 @@ export const ProjectsPage: React.FC = () => {
                 <div><p className="text-ink-400">Current Release</p><p className="mt-1 truncate font-medium text-ink-700">{project.currentRelease || 'Not scheduled'}</p></div>
               </div>
 
-              <div className="flex items-center justify-end gap-1 border-t border-ink-100 px-3 py-2" onClick={(event) => event.stopPropagation()}>
+              <div className="flex items-center justify-end gap-1 border-t border-ink-100 bg-white px-3 py-2" onClick={(event) => event.stopPropagation()}>
                 <button type="button" onClick={() => openProject(project)} className="rounded p-1.5 text-ink-400 hover:bg-ink-100 hover:text-brand-600" title="View project"><Eye className="h-4 w-4" /></button>
-                {hasPrivilege(PRIV.PROJECT_UPDATE) && <button type="button" onClick={() => navigate(ROUTES.PROJECT_EDIT.replace(':projectId', project.id))} className="rounded p-1.5 text-ink-400 hover:bg-ink-100 hover:text-brand-600" title="Edit project"><Edit className="h-4 w-4" /></button>}
-                {hasPrivilege(PRIV.PROJECT_DELETE) && <button type="button" onClick={() => handleDelete(project)} className="rounded p-1.5 text-ink-400 hover:bg-red-50 hover:text-signal-critical" title="Delete project"><Trash2 className="h-4 w-4" /></button>}
+                {hasPrivilege(PRIV.PROJECT_UPDATE) && project.status !== 'COMPLETED' && <button type="button" onClick={() => navigate(ROUTES.PROJECT_EDIT.replace(':projectId', project.id))} className="rounded p-1.5 text-ink-400 hover:bg-ink-100 hover:text-brand-600" title="Edit project"><Edit className="h-4 w-4" /></button>}
+                {hasPrivilege(PRIV.PROJECT_DELETE) && project.status !== 'COMPLETED' && <button type="button" onClick={() => handleDelete(project)} className="rounded p-1.5 text-ink-400 hover:bg-red-50 hover:text-signal-critical" title="Delete project"><Trash2 className="h-4 w-4" /></button>}
               </div>
             </article>
-          ))}
+          )})}
         </div>
       )}
 
@@ -244,15 +314,44 @@ export const ProjectsPage: React.FC = () => {
 
       <Modal
         isOpen={Boolean(completionTarget)}
-        onClose={() => !isCompleting && setCompletionTarget(null)}
-        title="Complete Project"
-        description={completionTarget ? `Complete ${completionTarget.name}.` : undefined}
-        size="sm"
-        footer={<><Button variant="ghost" onClick={() => setCompletionTarget(null)} disabled={isCompleting}>Cancel</Button><Button variant="danger" onClick={completeProject} isLoading={isCompleting}>Complete Project</Button></>}
+        onClose={() => { if (!isCompleting) { setCompletionTarget(null); setCompletionCheck(null) } }}
+        title={completionCheck?.canComplete ? 'Confirm Project Completion' : 'Project Cannot Be Completed'}
+        description={completionTarget ? completionTarget.name : undefined}
+        size="md"
+        footer={completionCheck?.canComplete
+          ? <><Button variant="ghost" onClick={() => setCompletionTarget(null)} disabled={isCompleting}>Cancel</Button><Button variant="danger" onClick={completeProject} isLoading={isCompleting}>Complete Project</Button></>
+          : <Button variant="secondary" onClick={() => { setCompletionTarget(null); setCompletionCheck(null) }}>Close</Button>}
       >
         <div className="space-y-4">
-          <Input label="Effective Completion Date" type="date" required min={completionTarget?.startDate} value={completionDate} error={completionError} onChange={(event) => { setCompletionDate(event.target.value); setCompletionError(undefined) }} />
-          <p className="text-sm text-ink-600">Active allocations will end on the completion date and future scheduled allocations will be cancelled.</p>
+          {completionCheck?.canComplete ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+              <div className="flex gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" /><div><p className="font-semibold text-red-900">This action is normally irreversible.</p><p className="mt-1 text-sm text-red-800">Completing this Project will release employee allocation capacity. Confirm only when all Project work is finished.</p></div></div>
+            </div>
+          ) : completionCheck && (
+            <>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3"><p className="text-2xl font-bold text-amber-900">{completionCheck.incompleteReleaseCount}</p><p className="text-xs text-amber-800">Incomplete releases</p></div>
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3"><p className="text-2xl font-bold text-amber-900">{completionCheck.pendingTestCaseCount}</p><p className="text-xs text-amber-800">Pending test cases</p></div>
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3"><p className="text-2xl font-bold text-amber-900">{completionCheck.unresolvedDefectCount}</p><p className="text-xs text-amber-800">Unresolved defects</p></div>
+              </div>
+              {completionCheck.blockers.length > 0 && <ul className="list-disc space-y-1 pl-5 text-sm text-ink-700">{completionCheck.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul>}
+            </>
+          )}
+          {completionError && <ErrorMessage message={completionError} />}
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(extensionTarget)}
+        onClose={() => !isExtending && setExtensionTarget(null)}
+        title="Extend Project End Date"
+        description={extensionTarget ? `${extensionTarget.name} must be extended before it can be activated.` : undefined}
+        size="sm"
+        footer={<><Button variant="ghost" onClick={() => setExtensionTarget(null)} disabled={isExtending}>Cancel</Button><Button onClick={extendProjectEndDate} isLoading={isExtending}>Extend and Activate</Button></>}
+      >
+        <div className="space-y-4">
+          <Input label="New End Date" type="date" required min={extensionTarget ? nextCalendarDate(extensionTarget.endDate) : undefined} value={extensionEndDate} error={extensionError} onChange={(event) => { setExtensionEndDate(event.target.value); setExtensionError(undefined) }} />
+          <p className="text-sm text-ink-600">Current end date: {extensionTarget ? formatDate(extensionTarget.endDate) : '—'}. The Project will be activated only after the extension succeeds.</p>
         </div>
       </Modal>
     </div>

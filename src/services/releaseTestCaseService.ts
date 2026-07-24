@@ -1,92 +1,112 @@
-import { mockTestCases } from '@/mock/testCases'
-import { mockReleases } from '@/mock/releases'
-import { mockReleaseTestCases } from '@/mock/releaseTestCases'
-import { mockEmployeeRecords } from '@/mock/employees'
-import { AllocationResult, ReleaseTestCaseRecord } from '@/types/releaseTestCase'
-import { TestCase } from '@/types/defect'
 import { ApiResponse } from '@/types/common'
-import { apiRequest, mockDelay, ok } from './apiClient'
+import { TestCaseRecord } from '@/types/testCase'
+import { AllocationMode, AllocationResult, ReleaseTestCaseRecord } from '@/types/releaseTestCase'
+import { apiRequest, fail, ok } from './apiClient'
+import { testCaseService } from './testCaseService'
 
-let nextId = mockReleaseTestCases.length + 1
+type Json = Record<string, any>
 
-function enrich(projectId: string, releaseId: string, testCaseId: string): ReleaseTestCaseRecord {
-  const testCase = mockTestCases.find((t) => t.id === testCaseId)!
-  const release = mockReleases.find((r) => r.id === releaseId)!
-  const now = new Date().toISOString()
-  return {
-    id: `rtc-${nextId++}`,
-    projectId,
-    releaseId,
-    releaseName: release.name,
-    releaseVersion: release.version,
-    testCaseId,
-    testCaseKey: testCase.testCaseNo,
-    title: testCase.description,
-    description: testCase.description,
-    steps: testCase.steps,
-    moduleId: testCase.moduleId,
-    moduleName: testCase.moduleName,
-    submoduleId: testCase.submoduleId,
-    submoduleName: testCase.submoduleName,
-    defectTypeId: testCase.defectTypeId,
-    defectTypeName: testCase.defectTypeName,
-    severityId: testCase.severityId,
-    severityName: testCase.severityName,
-    severityColor: testCase.severityColor,
-    status: 'NOT_STARTED',
-    version: 1,
-    active: true,
-    createdAt: now,
-    updatedAt: now,
-  }
-}
+const text = (...values: unknown[]) => String(values.find((value) => value !== undefined && value !== null) ?? '')
+const rows = (value: Json[] | { content?: Json[]; items?: Json[] }) =>
+  Array.isArray(value) ? value : value.content ?? value.items ?? []
+
+export const mapReleaseTestCase = (source: Json, projectId: string): ReleaseTestCaseRecord => ({
+  id: text(source.id, source.allocationId, source.releaseTestCaseAllocationId),
+  projectId: text(source.projectId, projectId),
+  releaseId: text(source.releaseId),
+  releaseName: text(source.releaseName),
+  releaseVersion: text(source.releaseVersion, source.version),
+  testCaseId: text(source.testCaseId),
+  testCaseKey: text(source.testCaseNo, source.testCaseKey),
+  title: text(source.title, source.description),
+  description: text(source.description),
+  steps: text(source.steps, source.recreationSteps),
+  moduleId: text(source.moduleId),
+  moduleName: text(source.moduleName),
+  submoduleId: text(source.submoduleId, source.subModuleId),
+  submoduleName: text(source.submoduleName, source.subModuleName),
+  defectTypeId: text(source.defectTypeId),
+  defectTypeName: text(source.defectTypeName),
+  severityId: text(source.severityId),
+  severityName: text(source.severityName),
+  severityColor: text(source.severityColor, '#64748B'),
+  attachmentName: source.attachmentName ? String(source.attachmentName) : undefined,
+  status: source.status === 'PASSED' || source.status === 'FAILED' ? source.status : 'NOT_STARTED',
+  assignedQaId: source.assignedQaId != null ? String(source.assignedQaId) : undefined,
+  assignedQaName: source.assignedQaName ? String(source.assignedQaName) : undefined,
+  executedById: source.executedById != null ? String(source.executedById) : undefined,
+  executedByName: source.executedByName ? String(source.executedByName) : undefined,
+  executedDate: source.executedDate ? String(source.executedDate) : undefined,
+  defectId: source.defectId != null ? String(source.defectId) : undefined,
+  defectNo: source.defectNo ? String(source.defectNo) : undefined,
+  defectAssignedToId: source.defectAssignedToId != null ? String(source.defectAssignedToId) : undefined,
+  defectAssignedToName: source.defectAssignedToName ? String(source.defectAssignedToName) : undefined,
+  version: Number(source.version ?? 0),
+  active: source.active !== false,
+  createdAt: text(source.createdAt),
+  updatedAt: text(source.updatedAt),
+})
+
+const endpoint = (projectId: string) =>
+  `/projects/${encodeURIComponent(projectId)}/testcase-allocations`
 
 export const releaseTestCaseService = {
-  /** Master test cases available for a project, for the Allocation picker only. */
-  async getProjectTestCases(projectId: string): Promise<ApiResponse<TestCase[]>> {
-    await mockDelay()
-    const rows: TestCase[] = mockTestCases
-      .filter((t) => t.projectId === projectId)
-      .map((t) => ({
-        id: t.id,
-        testCaseKey: t.testCaseNo,
-        title: t.description,
-        projectId: t.projectId,
-        projectName: '',
-        moduleName: t.moduleName,
-        priority: 'P2',
-        status: 'Not Executed',
-        lastExecutedBy: '',
-        lastExecutedAt: null,
-      }))
-    return ok(rows)
+  async getProjectTestCases(projectId: string): Promise<ApiResponse<TestCaseRecord[]>> {
+    const response = await testCaseService.getTestCases(projectId, {
+      pageNumber: 0,
+      pageSize: 1000,
+      sortBy: 'testCaseNo',
+      sortDir: 'asc',
+    })
+    return response.success ? ok(response.data.content, response.message) : fail(response.message)
   },
 
   async getAllocated(projectId: string, releaseId?: string): Promise<ApiResponse<ReleaseTestCaseRecord[]>> {
-    await mockDelay()
-    return ok(
-      mockReleaseTestCases
-        .filter((r) => r.projectId === projectId && r.active && (!releaseId || r.releaseId === releaseId))
-        .map((r) => ({ ...r })),
-    )
+    const response = await apiRequest<Json[] | { content?: Json[]; items?: Json[] }>(endpoint(projectId), {
+      query: { releaseId, pageNumber: 0, pageSize: 1000 },
+    })
+    return response.success
+      ? ok(rows(response.data).map((item) => mapReleaseTestCase(item, projectId)), response.message)
+      : fail(response.message)
   },
 
-  async allocate(projectId: string, releaseIds: string[], testCaseIds: string[]): Promise<ApiResponse<AllocationResult>> {
-    return apiRequest(`/projects/${encodeURIComponent(projectId)}/testcase-allocations`, {
-      method: 'POST',
-      body: { releaseIds, testCaseIds },
-    })
+  async allocate(
+    projectId: string,
+    releaseIds: string[],
+    testCaseIds: string[],
+    allocationMode: AllocationMode,
+  ): Promise<ApiResponse<AllocationResult>> {
+    let allocated = 0
+    let skipped = 0
+    let message = 'Test Cases allocated successfully.'
+    for (const releaseId of releaseIds) {
+      const response = await apiRequest<Json>(endpoint(projectId), {
+        method: 'POST',
+        body: {
+          releaseId: Number(releaseId),
+          testCaseIds: testCaseIds.map(Number),
+          allocationMode,
+        },
+      })
+      if (!response.success) return fail(response.message)
+      allocated += Number(response.data.allocated ?? response.data.allocatedCount ?? 0)
+      skipped += Number(response.data.skipped ?? response.data.skippedCount ?? 0)
+      message = response.message
+    }
+    return ok({
+      requested: releaseIds.length * testCaseIds.length,
+      allocated,
+      skipped,
+    }, message)
   },
 
-  async assignQa(ids: string[], employeeId: string): Promise<ApiResponse<null>> {
-    await mockDelay()
-    const employee = mockEmployeeRecords.find((e) => e.id === employeeId)
-    mockReleaseTestCases.forEach((r) => {
-      if (ids.includes(r.id) && r.status === 'NOT_STARTED') {
-        r.assignedQaId = employeeId
-        r.assignedQaName = employee ? `${employee.firstName} ${employee.lastName}` : employeeId
-      }
+  assignQa(projectId: string, allocationIds: string[], qaEmployeeId: string): Promise<ApiResponse<null>> {
+    return apiRequest(`${endpoint(projectId)}/qa`, {
+      method: 'PATCH',
+      body: {
+        allocationIds: allocationIds.map(Number),
+        qaEmployeeId: Number(qaEmployeeId),
+      },
     })
-    return ok(null, 'QA assignment updated successfully.')
   },
 }

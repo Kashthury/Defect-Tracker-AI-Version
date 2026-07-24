@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, CalendarDays, ExternalLink, Eye, PlayCircle, Plus, X } from 'lucide-react'
+import { AlertTriangle, CalendarDays, ExternalLink, Eye, PackageOpen, PlayCircle, Plus, X } from 'lucide-react'
 import { Badge } from '@/components/common/Badge'
 import { Button } from '@/components/common/Button'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -193,28 +193,32 @@ export const ReleasesPage: React.FC = () => {
                   }
                 }}
                 className={cn(
-                  'cursor-pointer overflow-hidden rounded-lg border bg-white shadow-panel transition-colors',
+                  'group cursor-pointer overflow-hidden rounded-2xl border bg-white shadow-panel transition-all duration-200 hover:-translate-y-0.5 hover:shadow-floating/50',
                   isActive
-                    ? 'border-brand-400 ring-1 ring-brand-400/30 hover:border-brand-500'
-                    : 'border-ink-200 hover:border-brand-300',
+                    ? 'border-emerald-300 ring-1 ring-emerald-400/20 hover:border-emerald-400'
+                    : release.status === 'ON_HOLD' ? 'border-amber-200 hover:border-amber-300' : 'border-slate-200 hover:border-slate-300',
                 )}
               >
-                <div className={cn('border-b px-4 py-4', isActive ? 'border-brand-200 bg-brand-500/5' : 'border-ink-100')}>
+                <div className={cn('h-1.5', isActive ? 'bg-emerald-500' : release.status === 'ON_HOLD' ? 'bg-amber-400' : 'bg-slate-400')} />
+                <div className={cn('border-b bg-gradient-to-r px-4 py-4', isActive ? 'border-emerald-100 from-emerald-50 via-white to-white' : release.status === 'ON_HOLD' ? 'border-amber-100 from-amber-50 via-white to-white' : 'border-slate-100 from-slate-100 via-white to-white')}>
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                    <div className="flex min-w-0 gap-3">
+                      <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', isActive ? 'bg-emerald-100 text-emerald-700' : release.status === 'ON_HOLD' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600')}><PackageOpen className="h-5 w-5" /></div>
+                      <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="truncate text-sm font-semibold text-ink-900" title={release.name}>{release.name}</h3>
+                        <h3 className="truncate text-base font-semibold text-ink-900" title={release.name}>{release.name}</h3>
                         <Badge tone={releaseStatusTone(release.status)} dot>{releaseStatusLabel(release.status)}</Badge>
                       </div>
                       <p className="mt-1 font-mono text-xs text-ink-500">Version {release.version}</p>
+                      </div>
                     </div>
                     <Badge tone="neutral">{release.releaseTypeName}</Badge>
                   </div>
                   <p className="mt-3 line-clamp-2 min-h-10 text-xs leading-5 text-ink-500">{release.description || 'No description provided.'}</p>
                 </div>
 
-                <div className="px-4 py-4 text-xs">
-                  <div><p className="text-ink-400">Release Date</p><p className="mt-1 flex items-center gap-1.5 font-medium text-ink-700"><CalendarDays className="h-3.5 w-3.5 text-ink-400" />{formatDate(release.releaseDate)}</p></div>
+                <div className="bg-gradient-to-b from-white to-ink-50/40 px-4 py-4 text-xs">
+                  <div className="rounded-xl bg-white p-3 ring-1 ring-ink-100"><p className="text-ink-400">Release Date</p><p className="mt-1 flex items-center gap-1.5 font-semibold text-ink-700"><CalendarDays className="h-3.5 w-3.5 text-brand-500" />{formatDate(release.releaseDate)}</p></div>
                 </div>
 
                 <div className="flex flex-wrap items-center justify-end gap-1 border-t border-ink-100 px-3 py-2" onClick={(event) => event.stopPropagation()}>

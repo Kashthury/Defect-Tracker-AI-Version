@@ -16,7 +16,7 @@ const INITIAL_VALUES: ProjectFormPayload = {
   endDate: '',
   designationId: '',
   managerId: '',
-  managerAllocationPercentage: 50,
+  managerAllocationPercentage: 100,
   managerChangeEffectiveDate: '',
   clientName: '',
   clientPhone: '',

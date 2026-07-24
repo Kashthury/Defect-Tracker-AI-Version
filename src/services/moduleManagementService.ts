@@ -85,7 +85,7 @@ export const moduleManagementService = {
       method: 'DELETE',
     })
   },
-  async getSubmodules(projectId: string, moduleId: string): Promise<ApiResponse<SubmoduleRecord[]>> {
+  async getSubmodules(projectId: string, moduleId?: string): Promise<ApiResponse<SubmoduleRecord[]>> {
     const response = await apiRequest<SubmoduleRecord[] | { content?: SubmoduleRecord[] }>(
       `/projects/${encodeURIComponent(projectId)}/submodules`,
       { query: { moduleId } },
@@ -95,7 +95,7 @@ export const moduleManagementService = {
     return ok(
       rows
         .map((item) => mapSubmodule(projectId, item))
-        .filter((item) => item.active !== false && String(item.moduleId) === String(moduleId)),
+        .filter((item) => item.active !== false && (!moduleId || String(item.moduleId) === String(moduleId))),
       response.message,
     )
   },

@@ -99,7 +99,10 @@ export const employeeService = {
   },
 
   async updateEmployee(id: string | number, payload: EmployeeUpdateRequest): Promise<ApiResponse<EmployeeResponse>> {
-    return mapResponse(await apiRequest<BackendEmployee>(`${ENDPOINT}/${encodeURIComponent(id)}`, { method: 'PUT', body: employeeFormData(payload) }))
+    return mapResponse(await apiRequest<BackendEmployee>(`${ENDPOINT}/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: employeeFormData(payload),
+    }))
   },
 
   async updateEmployeeStatus(id: string | number, active: boolean): Promise<ApiResponse<EmployeeResponse>> {

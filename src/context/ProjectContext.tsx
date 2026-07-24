@@ -26,6 +26,7 @@ export const ProjectContext = createContext<ProjectContextValue | undefined>(und
 
 export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isAuthenticated, isInitializing } = useAuth()
+  const authenticatedUserKey = user?.id || user?.employeeId || user?.email || null
   const navigate = useNavigate()
   const toast = useToast()
   const loadedUserIdRef = useRef<string | null>(null)
@@ -40,7 +41,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [selectedProject])
 
   const setSelectedProject = useCallback((project: SelectedProject) => {
-    setSelectedProjectState(project)
+    setSelectedProjectState({ ...project, projectId: String(project.projectId) })
   }, [])
 
   const clearSelectedProject = useCallback(() => {
@@ -49,7 +50,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [])
 
   const refreshProjects = useCallback(async () => {
-    if (!user?.id) {
+    if (!authenticatedUserKey) {
       setActiveProjects([])
       setIsLoadingProjects(false)
       return
@@ -70,7 +71,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setActiveProjects(result.data)
       setSelectedProjectState((current) => {
         if (!current) return null
-        const accessible = result.data.some((project) => project.projectId === current.projectId)
+        const accessible = result.data.some((project) => String(project.projectId) === String(current.projectId))
         if (accessible) return current
         sessionStorage.removeItem(SELECTED_PROJECT_STORAGE_KEY)
         toast.info('Your selected project is no longer available. Select another assigned project.')
@@ -82,11 +83,11 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } finally {
       setIsLoadingProjects(false)
     }
-  }, [toast, user?.id])
+  }, [authenticatedUserKey, toast])
 
   useEffect(() => {
     if (isInitializing) return
-    if (!isAuthenticated || !user?.id) {
+    if (!isAuthenticated || !authenticatedUserKey) {
       loadedUserIdRef.current = null
       clearSelectedProject()
       setActiveProjects([])
@@ -95,14 +96,14 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return
     }
 
-    if (loadedUserIdRef.current !== user.id) {
-      loadedUserIdRef.current = user.id
+    if (loadedUserIdRef.current !== authenticatedUserKey) {
+      loadedUserIdRef.current = authenticatedUserKey
       clearSelectedProject()
       setActiveProjects([])
       setProjectsError(null)
       void refreshProjects()
     }
-  }, [clearSelectedProject, isAuthenticated, isInitializing, refreshProjects, user?.id])
+  }, [authenticatedUserKey, clearSelectedProject, isAuthenticated, isInitializing, refreshProjects])
 
   useEffect(() => {
     const handleProjectForbidden = (event: Event) => {

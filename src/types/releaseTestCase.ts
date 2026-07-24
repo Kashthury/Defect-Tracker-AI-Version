@@ -100,8 +100,7 @@ export interface PatchReleaseTestCaseStatusPayload {
 export interface FailReleaseTestCasePayload {
   priorityId: string
   assignedToId: string
-  attachmentName?: string
-  executedBy: string
+  attachment?: File | null
   version: number
 }
 

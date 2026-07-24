@@ -32,23 +32,20 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({ className }) =
     return () => document.removeEventListener('mousedown', closeOnOutsideClick)
   }, [])
 
-  useEffect(() => {
-    if (!selectedProject) return
-    const nextPath = getProjectRouteForCurrentModule(location.pathname, selectedProject.projectId)
-    if (nextPath !== location.pathname) {
-      navigate({ pathname: nextPath, search: location.search, hash: location.hash }, { replace: true })
-    }
-  }, [location.hash, location.pathname, location.search, navigate, selectedProject])
-
   const selectProject = (projectId: string) => {
-    const project = activeProjects.find((item) => item.projectId === projectId)
+    const project = activeProjects.find((item) => String(item.projectId) === String(projectId))
     if (!project) return
 
-    if (project.projectId !== selectedProject?.projectId) setSelectedProject(project)
     setIsOpen(false)
     const nextPath = getProjectRouteForCurrentModule(location.pathname, project.projectId)
+    if (String(project.projectId) === String(selectedProject?.projectId) && nextPath === location.pathname) return
     if (nextPath !== location.pathname) {
+      // Inside a Project workspace the route is authoritative. Navigate first
+      // and let the workspace synchronizer perform the single context update.
+      if (!/^\/projects\/[^/]+(?:\/|$)/.test(location.pathname)) setSelectedProject(project)
       navigate({ pathname: nextPath, search: location.search, hash: location.hash }, { replace: true })
+    } else if (String(project.projectId) !== String(selectedProject?.projectId)) {
+      setSelectedProject(project)
     }
   }
 
@@ -62,7 +59,7 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({ className }) =
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         onClick={() => setIsOpen((open) => !open)}
-        disabled={isLoadingProjects || (!hasActiveProjects && !projectsError)}
+        disabled={isLoadingProjects || activeProjects.length === 0}
         className={cn(
           'flex h-9 w-full items-center gap-2 rounded-md border border-ink-200 bg-white px-3 text-left text-sm text-ink-800',
           'focus:outline-none focus:ring-2 focus:ring-brand-400/40 disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-400',
@@ -102,12 +99,12 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({ className }) =
                       key={project.projectId}
                       type="button"
                       role="option"
-                      aria-selected={project.projectId === selectedProject?.projectId}
+                      aria-selected={String(project.projectId) === String(selectedProject?.projectId)}
                       onClick={() => selectProject(project.projectId)}
                       className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-ink-700 hover:bg-ink-50"
                     >
                       <span className="min-w-0 flex-1 truncate">{project.projectName}</span>
-                      {project.projectId === selectedProject?.projectId && <Check className="h-4 w-4 shrink-0 text-brand-600" />}
+                      {String(project.projectId) === String(selectedProject?.projectId) && <Check className="h-4 w-4 shrink-0 text-brand-600" />}
                     </button>
                   ))
                 )}

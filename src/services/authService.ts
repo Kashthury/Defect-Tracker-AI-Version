@@ -8,8 +8,11 @@ const asObject = (value: unknown): JsonObject =>
   typeof value === 'object' && value !== null ? value as JsonObject : {}
 
 const asString = (...values: unknown[]) => {
-  const value = values.find((item) => typeof item === 'string' && item.length > 0)
-  return typeof value === 'string' ? value : ''
+  const value = values.find((item) =>
+    (typeof item === 'string' && item.length > 0) ||
+    (typeof item === 'number' && Number.isFinite(item)),
+  )
+  return value === undefined ? '' : String(value)
 }
 
 const asArray = (value: unknown): unknown[] => Array.isArray(value) ? value : []
@@ -51,6 +54,7 @@ const mapUser = (value: unknown): AuthenticatedUser | null => {
   const lastName = asString(user.lastName)
   return {
     id: asString(user.id, user.userId, user.employeeId),
+    employeeId: asString(user.employeeId, asObject(user.employee).id) || undefined,
     isFirstUser: user.isFirstUser === true || user.firstUser === true,
     fullName: asString(user.fullName, user.name, `${firstName} ${lastName}`.trim(), user.email),
     email: asString(user.email, user.username),

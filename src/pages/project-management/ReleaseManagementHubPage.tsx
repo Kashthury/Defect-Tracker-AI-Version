@@ -25,14 +25,6 @@ export const ReleaseManagementHubPage: React.FC = () => {
       onClick: () => go(ROUTES.PROJECT_RELEASES),
     },
     {
-      key: 'test-case-execution',
-      title: 'Test Case Execution',
-      description: 'Execute and review test cases for the active release.',
-      icon: PlayCircle,
-      privilege: PRIV.TESTCASE_VIEW,
-      onClick: () => go(ROUTES.PROJECT_TEST_CASE_EXECUTION),
-    },
-    {
       key: 'test-case-allocation',
       title: 'Test Case Allocation',
       description: 'Allocate test cases to a release using the configured module assignments.',
@@ -40,6 +32,15 @@ export const ReleaseManagementHubPage: React.FC = () => {
       privilege: PRIV.TESTCASE_VIEW,
       onClick: () => go(ROUTES.PROJECT_TEST_CASE_ALLOCATION),
     },
+    {
+      key: 'test-case-execution',
+      title: 'Test Case Execution',
+      description: 'Execute and review test cases for the active release.',
+      icon: PlayCircle,
+      privilege: PRIV.TESTCASE_VIEW,
+      onClick: () => go(ROUTES.PROJECT_TEST_CASE_EXECUTION),
+    },
+    
   ].filter((card) => hasPrivilege(card.privilege))
 
   return (

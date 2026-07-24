@@ -63,7 +63,7 @@ const EMPTY_SUMMARY: ReleaseTestCaseExecutionSummary = {
 interface FailFormState {
   priorityId: string
   assignedToId: string
-  attachmentName?: string
+  attachment?: File | null
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -125,6 +125,7 @@ export const ReleaseTestCaseExecutionPage: React.FC = () => {
   const [isLoadingDevelopers, setIsLoadingDevelopers] = useState(false)
   const [failError, setFailError] = useState<string | undefined>()
   const [isFailing, setIsFailing] = useState(false)
+  const [processingAllocationId, setProcessingAllocationId] = useState<string | null>(null)
 
   const [defectModalId, setDefectModalId] = useState<string | null>(null)
   const [defectDetails, setDefectDetails] = useState<DefectRecord | null>(null)
@@ -163,7 +164,7 @@ export const ReleaseTestCaseExecutionPage: React.FC = () => {
   }, [project.id, releaseRevision])
 
   const releaseId = activeRelease?.id
-  const employeeId = user?.id ?? ''
+  const employeeId = user?.employeeId ?? user?.id ?? ''
 
   const loadCounts = useCallback(() => {
     if (!releaseId) return
@@ -196,7 +197,7 @@ export const ReleaseTestCaseExecutionPage: React.FC = () => {
 
   const requestFail = (row: ReleaseTestCaseRecord) => {
     setFailTarget(row)
-    setFailForm({ priorityId: '', assignedToId: '', attachmentName: row.attachmentName })
+    setFailForm({ priorityId: '', assignedToId: '', attachment: null })
     setFailError(undefined)
     setEligibleDevelopers([])
     setIsLoadingDevelopers(true)
@@ -213,9 +214,11 @@ export const ReleaseTestCaseExecutionPage: React.FC = () => {
       confirmText: 'Mark Passed',
     })
     if (!confirmed) return
-    const result = await releaseTestCaseExecutionService.patchReleaseTestCaseStatus(row.id, {
+    setProcessingAllocationId(row.id)
+    const result = await releaseTestCaseExecutionService.patchReleaseTestCaseStatus(project.id, row.id, {
       status: 'PASSED', executedBy: employeeId, version: row.version,
     })
+    setProcessingAllocationId(null)
     if (result.success) {
       toast.success(result.message)
       setRefreshToken((t) => t + 1)
@@ -233,14 +236,15 @@ export const ReleaseTestCaseExecutionPage: React.FC = () => {
       return
     }
     setIsFailing(true)
-    const result = await releaseTestCaseExecutionService.failReleaseTestCaseAndCreateDefect(failTarget.id, {
+    setProcessingAllocationId(failTarget.id)
+    const result = await releaseTestCaseExecutionService.failReleaseTestCaseAndCreateDefect(project.id, failTarget.id, {
       priorityId: failForm.priorityId,
       assignedToId: failForm.assignedToId,
-      attachmentName: failForm.attachmentName,
-      executedBy: employeeId,
+      attachment: failForm.attachment,
       version: failTarget.version,
     })
     setIsFailing(false)
+    setProcessingAllocationId(null)
     if (result.success) {
       toast.success(result.message)
       setFailTarget(null)
@@ -379,6 +383,7 @@ export const ReleaseTestCaseExecutionPage: React.FC = () => {
           refreshToken={refreshToken}
           canExecute={canExecute}
           canFailCreateDefect={canFailCreateDefect}
+          processingAllocationId={processingAllocationId}
           moduleOptions={moduleOptions}
           defectTypeOptions={defectTypeOptions}
           severityOptions={severityOptions}
@@ -400,6 +405,7 @@ export const ReleaseTestCaseExecutionPage: React.FC = () => {
             refreshToken={refreshToken}
             canExecute={canExecute}
             canFailCreateDefect={canFailCreateDefect}
+            processingAllocationId={processingAllocationId}
             moduleOptions={moduleOptions}
             defectTypeOptions={defectTypeOptions}
             severityOptions={severityOptions}
@@ -461,17 +467,18 @@ export const ReleaseTestCaseExecutionPage: React.FC = () => {
               <div className="flex items-center gap-2 rounded-xl bg-ink-50 px-3 py-2 text-sm text-ink-600 ring-1 ring-inset ring-ink-100">
                 <Paperclip className="h-4 w-4 text-brand-500" /> Existing attachment: <span className="font-medium">{failTarget.attachmentName}</span>
               </div>
-            ) : (
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-ink-700">Attachment (optional)</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setFailForm((f) => ({ ...f, attachmentName: e.target.files?.[0]?.name }))}
-                  className="text-sm text-ink-600 file:mr-3 file:rounded-full file:border-0 file:bg-ink-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-ink-700 hover:file:bg-ink-200"
-                />
-              </div>
-            )}
+            ) : null}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-ink-700">{failTarget.attachmentName ? 'Replacement Attachment (optional)' : 'Attachment (optional)'}</label>
+              <input
+                type="file"
+                accept="image/*"
+                disabled={isFailing}
+                onChange={(e) => setFailForm((f) => ({ ...f, attachment: e.target.files?.[0] ?? null }))}
+                className="text-sm text-ink-600 file:mr-3 file:rounded-full file:border-0 file:bg-ink-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-ink-700 hover:file:bg-ink-200"
+              />
+              {failForm.attachment && <p className="text-xs text-ink-500">Selected: {failForm.attachment.name}</p>}
+            </div>
 
             <div className="grid grid-cols-2 gap-4 rounded-xl border-2 border-dashed border-amber-300 bg-amber-50/60 p-3">
               <div className="col-span-2 -mt-1 mb-0.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-700">
@@ -551,6 +558,7 @@ interface TabPanelProps {
   refreshToken: number
   canExecute: boolean
   canFailCreateDefect: boolean
+  processingAllocationId: string | null
   moduleOptions: { label: string; value: string }[]
   defectTypeOptions: { label: string; value: string }[]
   severityOptions: { label: string; value: string }[]
@@ -563,7 +571,7 @@ interface TabPanelProps {
 }
 
 const ExecutionTabPanel: React.FC<TabPanelProps> = ({
-  mode, projectId, releaseId, employeeId, refreshToken, canExecute, canFailCreateDefect,
+  mode, projectId, releaseId, employeeId, refreshToken, canExecute, canFailCreateDefect, processingAllocationId,
   moduleOptions, defectTypeOptions, severityOptions, statusOptions, defectCreatedOptions, qaFilterOptions,
   onPass, onFail, onViewDefect,
 }) => {
@@ -645,6 +653,7 @@ const ExecutionTabPanel: React.FC<TabPanelProps> = ({
       render: (r) => {
         const isMine = r.assignedQaId === employeeId
         const allowed = canExecute && isMine
+        const isProcessing = processingAllocationId !== null
         if (r.status === 'FAILED') {
           return (
             <span className="inline-flex items-center gap-1 rounded-full bg-ink-50 px-2.5 py-1 text-xs italic text-ink-400" title="This test case has failed and a defect has already been created.">
@@ -657,11 +666,11 @@ const ExecutionTabPanel: React.FC<TabPanelProps> = ({
             {r.status === 'NOT_STARTED' && (
               <button
                 type="button"
-                disabled={!allowed}
+                disabled={!allowed || isProcessing}
                 onClick={() => onPass(r)}
                 className={cn(
                   'inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-semibold text-white shadow-sm transition-all',
-                  allowed
+                  allowed && !isProcessing
                     ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 hover:shadow-panel'
                     : 'cursor-not-allowed bg-ink-200 text-ink-400',
                 )}
@@ -671,11 +680,11 @@ const ExecutionTabPanel: React.FC<TabPanelProps> = ({
             )}
             <button
               type="button"
-              disabled={!allowed || !canFailCreateDefect}
+              disabled={!allowed || !canFailCreateDefect || isProcessing}
               onClick={() => onFail(r)}
               className={cn(
                 'inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-semibold text-white shadow-sm transition-all',
-                allowed && canFailCreateDefect
+                allowed && canFailCreateDefect && !isProcessing
                   ? 'bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 hover:shadow-panel'
                   : 'cursor-not-allowed bg-ink-200 text-ink-400',
               )}

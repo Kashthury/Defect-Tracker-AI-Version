@@ -7,6 +7,7 @@ import {
   AllocationHistoryEntry,
   CreateProjectPayload,
   Project,
+  ProjectCompletionCheck,
   ProjectModule,
   ProjectStatus,
   ProjectSummary,
@@ -58,17 +59,36 @@ export const projectService = {
   async updateProjectStatus(
     projectId: string,
     status: ProjectStatus,
-    effectiveCompletionDate?: string,
   ): Promise<ApiResponse<Project>> {
     if (!(['ACTIVE', 'ON_HOLD', 'COMPLETED'] as ProjectStatus[]).includes(status)) return fail('Invalid project status.')
-    if (status === 'COMPLETED' && !effectiveCompletionDate) return fail('Effective Completion Date is required.')
-    return apiRequest(`/projects/${encodeURIComponent(projectId)}`, {
-      method: 'PUT',
-      body: {
-        status,
-        ...(status === 'COMPLETED' ? { effectiveCompletionDate } : {}),
-      },
+    return apiRequest(`/projects/${encodeURIComponent(projectId)}/status`, {
+      method: 'PATCH',
+      body: { status },
     })
+  },
+
+  async extendProjectEndDate(projectId: string, endDate: string): Promise<ApiResponse<Project>> {
+    return apiRequest(`/projects/${encodeURIComponent(projectId)}/end-date`, {
+      method: 'PATCH',
+      body: { endDate },
+    })
+  },
+
+  async checkProjectCompletion(projectId: string): Promise<ApiResponse<ProjectCompletionCheck>> {
+    const response = await apiRequest<Record<string, unknown>>(
+      `/projects/${encodeURIComponent(projectId)}/completion-check`,
+    )
+    if (!response.success) return fail(response.message)
+    const data = response.data
+    const count = (...keys: string[]) => Number(keys.map((key) => data[key]).find((value) => value != null) ?? 0)
+    const rawBlockers = data.blockers ?? data.blockerDetails ?? data.reasons
+    return ok({
+      canComplete: Boolean(data.canComplete),
+      incompleteReleaseCount: count('incompleteReleaseCount', 'incompleteReleases'),
+      pendingTestCaseCount: count('pendingTestCaseCount', 'pendingTestCases'),
+      unresolvedDefectCount: count('unresolvedDefectCount', 'unresolvedDefects'),
+      blockers: Array.isArray(rawBlockers) ? rawBlockers.map(String) : rawBlockers ? [String(rawBlockers)] : [],
+    }, response.message)
   },
 
   async deleteProject(projectId: string): Promise<ApiResponse<null>> {
@@ -143,19 +163,35 @@ export const projectService = {
   },
 
   async getAuthorizedActiveProjects(): Promise<ApiResponse<SelectedProject[]>> {
-    const response = await this.getProjects({
+    let response = await this.getProjects({
       pageNumber: 0,
       pageSize: 1000,
       filters: { status: 'ACTIVE' },
     })
     if (!response.success) return fail(response.message)
+    // Some backend list implementations expose visible Projects correctly but
+    // do not yet apply the status query consistently. Retry the same
+    // backend-authorized collection without the filter only when it returned
+    // no ACTIVE rows; never construct accessibility from frontend user data.
+    if (response.data.content.length === 0) {
+      const visible = await this.getProjects({ pageNumber: 0, pageSize: 1000 })
+      if (!visible.success) return fail(visible.message)
+      response = ok({
+        ...visible.data,
+        content: visible.data.content.filter((project) => String(project.status).toUpperCase() === 'ACTIVE'),
+      }, visible.message)
+    }
     const projects = response.data.content
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((project) => ({
-        projectId: project.id,
-        projectName: project.name,
-        status: project.status,
-      }))
+      .map((project) => {
+        const source = project as Project & { projectId?: string | number; projectName?: string }
+        return {
+          projectId: String(source.id ?? source.projectId ?? ''),
+          projectName: source.name ?? source.projectName ?? '',
+          status: source.status,
+        }
+      })
+      .filter((project) => project.projectId.length > 0)
+      .sort((a, b) => a.projectName.localeCompare(b.projectName))
 
     return ok(projects, response.message)
   },

@@ -34,6 +34,7 @@ export interface EmployeeCreateRequest {
 export interface EmployeeUpdateRequest extends EmployeeCreateRequest {
   active: boolean
   removeProfileImage?: boolean
+  existingProfileImage?: string | null
 }
 
 export interface EmployeeDropdownResponse {
@@ -43,6 +44,8 @@ export interface EmployeeDropdownResponse {
   email: string
   designationId: number
   designationName: string
+  availablePercentage?: number
+  maxAllocationPercentage?: number
 }
 
 export interface EmployeeListParams {
